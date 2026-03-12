@@ -1,0 +1,49 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy to VPS
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            cd ~/streamvault-backend && git pull origin main
+            cd ~/ai-orchestration && docker compose up -d --build streamvault-api
+
+      - name: Health check
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: |
+            for i in $(seq 1 18); do
+              if curl -sf http://localhost:3001/health > /dev/null 2>&1; then
+                echo "Health check passed after $((i * 5))s"
+                exit 0
+              fi
+              echo "Waiting for health... attempt $i/18"
+              sleep 5
+            done
+            echo "Health check failed after 90s"
+            cd ~/ai-orchestration && docker compose logs streamvault-api --tail 50
+            exit 1
+
+      - name: Cleanup old images
+        if: success()
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          script: docker image prune -f
