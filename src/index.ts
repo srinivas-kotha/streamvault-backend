@@ -4,7 +4,7 @@ import helmet from 'helmet';
 import { config } from './config';
 import { corsMiddleware } from './middleware/cors';
 import { csrfMiddleware } from './middleware/csrf';
-import { apiLimiter } from './middleware/rateLimiter';
+import { apiLimiter, streamLimiter } from './middleware/rateLimiter';
 import { errorHandler } from './middleware/errorHandler';
 import { closePool } from './services/db.service';
 import { recoverDownloadQueue } from './services/download.service';
@@ -35,6 +35,11 @@ app.use(corsMiddleware);
 app.use(cookieParser());
 app.use(express.json({ limit: '1mb' }));
 app.use(csrfMiddleware);
+
+// --- Stream routes (higher rate limit — HLS generates many segment requests) ---
+app.use('/api/stream', streamLimiter, streamRouter);
+
+// --- Rate limiter (applied to all routes except /api/stream) ---
 app.use(apiLimiter);
 
 // --- Route mounts ---
@@ -44,7 +49,6 @@ app.use('/api/live', liveRouter);
 app.use('/api/vod', vodRouter);
 app.use('/api/series', seriesRouter);
 app.use('/api', searchRouter);
-app.use('/api/stream', streamRouter);
 app.use('/api/favorites', favoritesRouter);
 app.use('/api/history', historyRouter);
 app.use('/api/downloads', downloadsRouter);
