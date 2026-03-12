@@ -72,12 +72,19 @@ router.delete('/:contentId', authMiddleware, async (req: Request, res: Response)
       return;
     }
 
+    const bodyParsed = favoriteSchema.safeParse(req.body);
+    if (!bodyParsed.success) {
+      res.status(400).json({ error: 'Bad Request', message: 'content_type is required' });
+      return;
+    }
+
     const userId = req.user!.userId;
     const contentId = parseInt(parsed.data.contentId, 10);
+    const { content_type } = bodyParsed.data;
 
     await query(
-      'DELETE FROM sv_favorites WHERE user_id = $1 AND content_id = $2',
-      [userId, contentId],
+      'DELETE FROM sv_favorites WHERE user_id = $1 AND content_id = $2 AND content_type = $3',
+      [userId, contentId, content_type],
     );
 
     res.json({ message: 'Favorite removed' });

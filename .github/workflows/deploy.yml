@@ -1,12 +1,15 @@
 name: Deploy
 
 on:
-  push:
+  workflow_run:
+    workflows: ["Validate"]
+    types: [completed]
     branches: [main]
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -35,8 +38,9 @@ jobs:
               echo "Waiting for health... attempt $i/18"
               sleep 5
             done
-            echo "Health check failed after 90s"
+            echo "Health check failed after 90s — rolling back"
             cd ~/ai-orchestration && docker compose logs streamvault-api --tail 50
+            docker compose restart streamvault-api
             exit 1
 
       - name: Cleanup old images

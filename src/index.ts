@@ -1,5 +1,6 @@
 import express from 'express';
 import cookieParser from 'cookie-parser';
+import helmet from 'helmet';
 import { config } from './config';
 import { corsMiddleware } from './middleware/cors';
 import { csrfMiddleware } from './middleware/csrf';
@@ -29,6 +30,7 @@ import eventsRouter from './routers/events.router';
 const app = express();
 
 // --- Global middleware ---
+app.use(helmet());
 app.use(corsMiddleware);
 app.use(cookieParser());
 app.use(express.json({ limit: '1mb' }));

@@ -36,14 +36,7 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
       return;
     }
 
-    // Fetch all categories to get full stream lists
-    const [liveCategories, vodCategories, seriesCategories] = await Promise.allSettled([
-      xtreamService.getCategories('live'),
-      xtreamService.getCategories('vod'),
-      xtreamService.getCategories('series'),
-    ]);
-
-    // Fetch all streams for each type (use category_id=0 or empty to get all)
+    // Fetch all streams for each type (use category_id=0 to get all)
     const [liveStreams, vodStreams, seriesItems] = await Promise.allSettled([
       xtreamService.getStreams('0', 'live'),
       xtreamService.getStreams('0', 'vod'),
