@@ -10,7 +10,7 @@ type StreamType = (typeof VALID_TYPES)[number];
 
 const UPSTREAM_HEADERS = ['content-type', 'content-length', 'content-range', 'accept-ranges'];
 const USER_AGENT = 'IPTV Smarters Pro/2.2.2.1';
-const CONNECT_TIMEOUT_MS = 15_000;
+const CONNECT_TIMEOUT_MS = 30_000;
 
 function getXtreamBase(): string {
   const { host, port, username, password } = config.xtream;

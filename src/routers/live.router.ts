@@ -2,8 +2,91 @@ import { Router, Request, Response } from 'express';
 import { authMiddleware } from '../middleware/auth';
 import { xtreamService } from '../services/xtream.service';
 import { categoryIdSchema, streamIdSchema } from '../utils/validators';
+import { cacheGet, cacheSet, CacheTTL } from '../services/cache.service';
+import type { XtreamCategory, XtreamLiveStream } from '../types/xtream.types';
 
 const router = Router();
+
+// Priority channel patterns — matched case-insensitively against stream names
+const PRIORITY_PATTERNS = [
+  'etv telugu', 'etv hd', 'etv',
+  'maa tv', 'maa hd', 'star maa', 'maa gold', 'maa movies',
+  'gemini tv', 'gemini hd', 'gemini movies', 'gemini',
+  'zee telugu', 'zee telugu hd',
+];
+
+// Category name patterns that likely contain Telugu live channels
+const TELUGU_CATEGORY_PATTERNS = [
+  'telugu', 'india entertainment', 'indian', 'india',
+];
+
+function matchesPriority(name: string): number {
+  const lower = name.toLowerCase().trim();
+  for (let i = 0; i < PRIORITY_PATTERNS.length; i++) {
+    if (lower === PRIORITY_PATTERNS[i] || lower.includes(PRIORITY_PATTERNS[i]!)) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+function isTeluguCategory(catName: string): boolean {
+  const lower = catName.toLowerCase();
+  return TELUGU_CATEGORY_PATTERNS.some((pat) => lower.includes(pat));
+}
+
+// GET /api/live/featured — priority channels
+router.get('/featured', authMiddleware, async (_req: Request, res: Response) => {
+  try {
+    const cacheKey = 'xtream:live:featured';
+    const cached = cacheGet<XtreamLiveStream[]>(cacheKey);
+    if (cached) {
+      res.json(cached);
+      return;
+    }
+
+    // 1. Fetch all live categories
+    const categories: XtreamCategory[] = await xtreamService.getCategories('live');
+
+    // 2. Filter to Telugu/Indian categories
+    const teluguCats = categories.filter((cat) => isTeluguCategory(cat.category_name));
+
+    // 3. Fetch streams from each Telugu category in parallel
+    const streamResults = await Promise.allSettled(
+      teluguCats.map((cat) => xtreamService.getStreams(cat.category_id, 'live')),
+    );
+
+    // 4. Flatten and deduplicate
+    const allStreams: XtreamLiveStream[] = [];
+    const seen = new Set<number>();
+    for (const result of streamResults) {
+      if (result.status === 'fulfilled') {
+        for (const stream of result.value as XtreamLiveStream[]) {
+          if (!seen.has(stream.stream_id)) {
+            seen.add(stream.stream_id);
+            allStreams.push(stream);
+          }
+        }
+      }
+    }
+
+    // 5. Filter to priority channels and sort by priority order
+    const priorityStreams = allStreams
+      .map((s) => ({ stream: s, rank: matchesPriority(s.name) }))
+      .filter((entry) => entry.rank >= 0)
+      .sort((a, b) => a.rank - b.rank)
+      .map((entry) => entry.stream);
+
+    // Take top 20 priority channels
+    const featured = priorityStreams.slice(0, 20);
+
+    cacheSet(cacheKey, featured, CacheTTL.CHANNEL_LIST);
+    res.json(featured);
+  } catch (err) {
+    console.error('[live] Failed to fetch featured channels:', err instanceof Error ? err.message : err);
+    res.status(502).json({ error: 'Bad Gateway', message: 'Failed to fetch featured channels' });
+  }
+});
 
 // GET /api/live/categories
 router.get('/categories', authMiddleware, async (_req: Request, res: Response) => {
@@ -51,3 +134,4 @@ router.get('/epg/:streamId', authMiddleware, async (req: Request, res: Response)
 });
 
 export default router;
+
