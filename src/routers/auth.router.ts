@@ -19,7 +19,7 @@ const COOKIE_OPTS_BASE = {
 };
 
 const ACCESS_MAX_AGE = 15 * 60 * 1000;       // 15 minutes
-const REFRESH_MAX_AGE = 7 * 24 * 60 * 60 * 1000; // 7 days
+const REFRESH_MAX_AGE = 90 * 24 * 60 * 60 * 1000; // 90 days
 
 function setTokenCookies(res: Response, accessToken: string, refreshToken: string): void {
   res.cookie('access_token', accessToken, { ...COOKIE_OPTS_BASE, maxAge: ACCESS_MAX_AGE });
@@ -102,9 +102,9 @@ router.post('/refresh', async (req: Request, res: Response) => {
 
     const tokenHash = hashToken(token);
 
-    // Check token exists and is not revoked
+    // Check token exists, is not revoked, and has not expired in DB
     const result = await query<DbRefreshToken>(
-      'SELECT id, revoked FROM sv_refresh_tokens WHERE token_hash = $1 AND user_id = $2',
+      'SELECT id, revoked FROM sv_refresh_tokens WHERE token_hash = $1 AND user_id = $2 AND expires_at > NOW()',
       [tokenHash, payload.userId],
     );
 
@@ -134,6 +134,13 @@ router.post('/refresh', async (req: Request, res: Response) => {
     );
 
     setTokenCookies(res, newAccessToken, newRefreshToken);
+
+    // Cleanup expired and old revoked tokens (non-blocking)
+    query(
+      'DELETE FROM sv_refresh_tokens WHERE user_id = $1 AND (expires_at < NOW() OR (revoked = true AND created_at < NOW() - INTERVAL \'7 days\'))',
+      [payload.userId],
+    ).catch(() => { /* cleanup failure is non-critical */ });
+
     res.json({ message: 'Tokens refreshed' });
   } catch (err) {
     console.error('[auth] Refresh error:', err instanceof Error ? err.message : err);
