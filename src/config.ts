@@ -50,4 +50,8 @@ export const config = {
   cors: {
     origin: optionalEnv('CORS_ORIGIN', 'https://streamvault.srinivaskotha.uk'),
   },
+
+  auth: {
+    bypassIPs: (process.env.AUTH_BYPASS_IPS || '').split(',').map(s => s.trim()).filter(Boolean),
+  },
 } as const;

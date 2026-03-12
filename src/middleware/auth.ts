@@ -1,5 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { verifyAccessToken } from '../utils/jwt';
+import { isIPTrusted } from '../utils/ip';
+import { config } from '../config';
 import type { TokenPayload } from '../types/api.types';
 
 declare global {
@@ -12,6 +14,13 @@ declare global {
 }
 
 export function authMiddleware(req: Request, res: Response, next: NextFunction): void {
+  // IP bypass: trusted networks skip JWT check
+  if (config.auth.bypassIPs.length > 0 && req.ip && isIPTrusted(req.ip, config.auth.bypassIPs)) {
+    req.user = { userId: 0, username: 'lan-user' };
+    next();
+    return;
+  }
+
   const token = req.cookies?.access_token;
 
   if (!token) {
