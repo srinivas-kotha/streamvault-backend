@@ -30,7 +30,10 @@ async function fetchJson<T>(url: string): Promise<T> {
   const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
   try {
-    const res = await fetch(url, { signal: controller.signal });
+    const res = await fetch(url, {
+      signal: controller.signal,
+      headers: { 'User-Agent': 'IPTV Smarters Pro/2.2.2.1' },
+    });
 
     if (!res.ok) {
       throw new Error(`Xtream API returned ${res.status}`);
