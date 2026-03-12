@@ -1,12 +1,14 @@
 import { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
+import { isIPTrusted } from '../utils/ip';
+import { config } from '../config';
 
 const CSRF_COOKIE = 'sv_csrf';
 const CSRF_HEADER = 'x-csrf-token';
 const SAFE_METHODS = ['GET', 'HEAD', 'OPTIONS'];
 
 // Endpoints exempt from CSRF validation (unauthenticated — no session to hijack)
-const CSRF_EXEMPT_PATHS = ['/api/auth/login', '/api/auth/refresh'];
+const CSRF_EXEMPT_PATHS = ['/api/auth/login', '/api/auth/refresh', '/api/auth/auto-login'];
 
 export function csrfMiddleware(req: Request, res: Response, next: NextFunction): void {
   // Always ensure a CSRF cookie exists
@@ -24,6 +26,12 @@ export function csrfMiddleware(req: Request, res: Response, next: NextFunction):
       next();
       return;
     }
+  }
+
+  // Trusted IPs bypass CSRF (auto-login sessions don't go through normal login flow)
+  if (config.auth.bypassIPs.length > 0 && req.ip && isIPTrusted(req.ip, config.auth.bypassIPs)) {
+    next();
+    return;
   }
 
   // Safe methods don't need CSRF validation

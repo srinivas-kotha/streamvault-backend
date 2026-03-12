@@ -5,6 +5,8 @@ import { signAccessToken, signRefreshToken, verifyRefreshToken, hashToken } from
 import { query } from '../services/db.service';
 import { authMiddleware } from '../middleware/auth';
 import { loginLimiter } from '../middleware/rateLimiter';
+import { config } from '../config';
+import { isIPTrusted } from '../utils/ip';
 import type { DbUser, DbRefreshToken } from '../types/db.types';
 import type { TokenPayload } from '../types/api.types';
 
@@ -30,6 +32,46 @@ function clearTokenCookies(res: Response): void {
   res.clearCookie('access_token', { ...COOKIE_OPTS_BASE });
   res.clearCookie('refresh_token', { ...COOKIE_OPTS_BASE });
 }
+
+// GET /api/auth/auto-login — issues tokens if request comes from a trusted IP
+router.get('/auto-login', async (req: Request, res: Response) => {
+  try {
+    if (config.auth.bypassIPs.length === 0 || !req.ip || !isIPTrusted(req.ip, config.auth.bypassIPs)) {
+      res.status(403).json({ error: 'Forbidden', message: 'IP not in bypass list' });
+      return;
+    }
+
+    // Find admin user (first user in DB)
+    const result = await query<DbUser>(
+      'SELECT id, username FROM sv_users ORDER BY id ASC LIMIT 1',
+    );
+
+    if (result.rows.length === 0) {
+      res.status(500).json({ error: 'Internal Server Error', message: 'No users configured' });
+      return;
+    }
+
+    const user = result.rows[0];
+    const payload: TokenPayload = { userId: user.id, username: user.username };
+    const accessToken = signAccessToken(payload);
+    const refreshToken = signRefreshToken(payload);
+
+    // Store refresh token hash in DB
+    const tokenHash = hashToken(refreshToken);
+    const expiresAt = new Date(Date.now() + REFRESH_MAX_AGE);
+
+    await query(
+      'INSERT INTO sv_refresh_tokens (user_id, token_hash, expires_at) VALUES ($1, $2, $3)',
+      [user.id, tokenHash, expiresAt],
+    );
+
+    setTokenCookies(res, accessToken, refreshToken);
+    res.json({ message: 'Auto-login successful', userId: user.id, username: user.username });
+  } catch (err) {
+    console.error('[auth] Auto-login error:', err instanceof Error ? err.message : err);
+    res.status(500).json({ error: 'Internal Server Error', message: 'Auto-login failed' });
+  }
+});
 
 // POST /api/auth/login
 router.post('/login', loginLimiter, async (req: Request, res: Response) => {
