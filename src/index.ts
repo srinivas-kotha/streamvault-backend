@@ -33,7 +33,19 @@ const app = express();
 app.set('trust proxy', 1);
 
 // --- Global middleware ---
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "blob:", "https:", "http:"],
+      mediaSrc: ["'self'", "blob:", "https:", "http:"],
+      connectSrc: ["'self'", "https:", "http:"],
+      fontSrc: ["'self'", "data:"],
+    },
+  },
+}));
 app.use(corsMiddleware);
 app.use(cookieParser());
 app.use(express.json({ limit: '1mb' }));
