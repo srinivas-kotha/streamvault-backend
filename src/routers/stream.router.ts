@@ -21,7 +21,7 @@ function buildXtreamUrl(type: StreamType, id: string): string {
   const { host, port, username, password } = config.xtream;
 
   const formatMap: Record<StreamType, { path: string; ext: string }> = {
-    live: { path: 'live', ext: 'm3u8' },
+    live: { path: 'live', ext: 'ts' },
     vod: { path: 'movie', ext: 'mp4' },
     series: { path: 'series', ext: 'mp4' },
   };
@@ -212,11 +212,40 @@ router.get('/:type/:id', authMiddleware, async (req: Request, res: Response) => 
     }
 
     if (isLive) {
-      // HLS playlist — rewrite URLs to route segments through our proxy
-      const text = await upstream.text();
-      const rewritten = rewriteM3u8(text, getXtreamBase());
-      res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
-      res.send(rewritten);
+      // Check content-type to determine stream format
+      const contentType = upstream.headers.get('content-type') || '';
+      const isM3u8ByType = contentType.includes('mpegurl');
+
+      if (isM3u8ByType) {
+        // HLS playlist (detected by content-type) — rewrite URLs
+        const text = await upstream.text();
+        const rewritten = rewriteM3u8(text, getXtreamBase());
+        res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+        res.setHeader('X-Stream-Format', 'm3u8');
+        res.send(rewritten);
+      } else if (contentType.includes('text/') || contentType.includes('octet-stream') || !contentType) {
+        // Ambiguous content-type — sniff first bytes to detect M3U8 vs binary
+        const arrayBuf = await upstream.arrayBuffer();
+        const buf = Buffer.from(arrayBuf);
+        const prefix = buf.subarray(0, 7).toString('utf-8');
+
+        if (prefix === '#EXTM3U') {
+          const text = buf.toString('utf-8');
+          const rewritten = rewriteM3u8(text, getXtreamBase());
+          res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+          res.setHeader('X-Stream-Format', 'm3u8');
+          res.send(rewritten);
+        } else {
+          // Binary data with ambiguous content-type — pipe as TS
+          res.setHeader('X-Stream-Format', 'ts');
+          res.setHeader('Content-Type', 'video/mp2t');
+          res.send(buf);
+        }
+      } else {
+        // TS or other binary stream — pipe directly
+        res.setHeader('X-Stream-Format', 'ts');
+        pipeUpstream(upstream, req, res, controller, UPSTREAM_HEADERS);
+      }
     } else {
       // VOD/Series — pipe binary stream
       pipeUpstream(upstream, req, res, controller, UPSTREAM_HEADERS);

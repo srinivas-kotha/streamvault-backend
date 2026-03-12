@@ -29,6 +29,9 @@ import eventsRouter from './routers/events.router';
 
 const app = express();
 
+// Trust first proxy (Nginx Proxy Manager) — fixes ERR_ERL_UNEXPECTED_X_FORWARDED_FOR
+app.set('trust proxy', 1);
+
 // --- Global middleware ---
 app.use(helmet());
 app.use(corsMiddleware);
