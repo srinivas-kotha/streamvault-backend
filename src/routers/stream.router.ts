@@ -148,10 +148,10 @@ router.get('/live/segment/*', authMiddleware, async (req: Request, res: Response
     } else {
       pipeUpstream(upstream, req, res, controller, ['content-type', 'content-length']);
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
     clearTimeout(timeout);
     if (!res.headersSent) {
-      if (err.name === 'AbortError') {
+      if (err instanceof Error && err.name === 'AbortError') {
         if (!req.closed) {
           res.status(504).json({ error: 'Segment source timed out' });
         }
@@ -221,10 +221,10 @@ router.get('/:type/:id', authMiddleware, async (req: Request, res: Response) => 
       // VOD/Series — pipe binary stream
       pipeUpstream(upstream, req, res, controller, UPSTREAM_HEADERS);
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
     clearTimeout(timeout);
     if (!res.headersSent) {
-      if (err.name === 'AbortError') {
+      if (err instanceof Error && err.name === 'AbortError') {
         if (!req.closed) {
           res.status(504).json({ error: 'Stream source timed out' });
         }
