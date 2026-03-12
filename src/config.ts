@@ -24,7 +24,7 @@ export const config = {
     secret: requiredEnv('JWT_SECRET'),
     refreshSecret: requiredEnv('JWT_REFRESH_SECRET'),
     accessExpiresIn: '15m',
-    refreshExpiresIn: '7d',
+    refreshExpiresIn: '90d',
   },
 
   xtream: {
