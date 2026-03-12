@@ -1,6 +1,5 @@
 import { execSync } from 'child_process';
-import { readdirSync, statSync, unlinkSync, existsSync } from 'fs';
-import { join } from 'path';
+import { unlinkSync, existsSync } from 'fs';
 import { config } from '../config';
 import { query } from './db.service';
 
