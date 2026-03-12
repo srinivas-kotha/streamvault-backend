@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { Readable } from 'node:stream';
 import { authMiddleware } from '../middleware/auth';
 import { config } from '../config';
 
@@ -7,8 +8,162 @@ const router = Router();
 const VALID_TYPES = ['live', 'vod', 'series'] as const;
 type StreamType = (typeof VALID_TYPES)[number];
 
-// GET /api/stream/url/:type/:id — construct stream URL for the frontend player
-router.get('/url/:type/:id', authMiddleware, (req: Request, res: Response) => {
+const UPSTREAM_HEADERS = ['content-type', 'content-length', 'content-range', 'accept-ranges'];
+const USER_AGENT = 'IPTV Smarters Pro/2.2.2.1';
+const CONNECT_TIMEOUT_MS = 15_000;
+
+function getXtreamBase(): string {
+  const { host, port, username, password } = config.xtream;
+  return `http://${host}:${port}/live/${username}/${password}/`;
+}
+
+function buildXtreamUrl(type: StreamType, id: string): string {
+  const { host, port, username, password } = config.xtream;
+
+  const formatMap: Record<StreamType, { path: string; ext: string }> = {
+    live: { path: 'live', ext: 'm3u8' },
+    vod: { path: 'movie', ext: 'mp4' },
+    series: { path: 'series', ext: 'mp4' },
+  };
+
+  const { path, ext } = formatMap[type];
+  return `http://${host}:${port}/${path}/${username}/${password}/${id}.${ext}`;
+}
+
+/** Validate that an assembled URL targets the configured Xtream host (SSRF protection). */
+function isAllowedUpstreamUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.hostname === config.xtream.host && parsed.port === String(config.xtream.port);
+  } catch {
+    return false;
+  }
+}
+
+/** Rewrite M3U8 playlist URLs to route through our segment proxy. */
+function rewriteM3u8(text: string, xtreamBase: string): string {
+  return text
+    .split('\n')
+    .map((line) => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) return line;
+
+      // Absolute URL from Xtream — strip base to get segment path
+      if (trimmed.startsWith('http')) {
+        if (trimmed.startsWith(xtreamBase)) {
+          const segmentPath = trimmed.slice(xtreamBase.length);
+          return `/api/stream/live/segment/${segmentPath}`;
+        }
+        // Non-matching absolute URL (CDN, different host) — skip rewriting, leave as-is
+        // HLS.js will fetch it directly; this is intentional for CDN-backed providers
+        return line;
+      }
+
+      // Relative URL — prefix with segment proxy
+      return `/api/stream/live/segment/${trimmed}`;
+    })
+    .join('\n');
+}
+
+/** Pipe upstream body to response, with cleanup on client disconnect. */
+function pipeUpstream(
+  upstream: globalThis.Response,
+  req: Request,
+  res: Response,
+  controller: AbortController,
+  headersToForward: string[],
+): void {
+  res.status(upstream.status);
+  for (const header of headersToForward) {
+    const value = upstream.headers.get(header);
+    if (value) res.setHeader(header, value);
+  }
+
+  if (upstream.body) {
+    const readable = Readable.fromWeb(upstream.body as ReadableStream<Uint8Array>);
+    req.on('close', () => {
+      controller.abort();
+      readable.destroy();
+    });
+    readable.pipe(res);
+  } else {
+    res.end();
+  }
+}
+
+// IMPORTANT: Segment route MUST be registered before /:type/:id to avoid being caught by the wildcard
+// GET /api/stream/live/segment/* — HLS segment proxy
+router.get('/live/segment/*', authMiddleware, async (req: Request, res: Response) => {
+  const segmentPath = req.params[0];
+
+  // Path traversal + empty path protection
+  if (!segmentPath || segmentPath.includes('..') || segmentPath.startsWith('/')) {
+    res.status(400).json({
+      error: 'Bad Request',
+      message: 'Invalid segment path',
+    });
+    return;
+  }
+
+  const { host, port, username, password } = config.xtream;
+  const url = `http://${host}:${port}/live/${username}/${password}/${segmentPath}`;
+
+  // SSRF protection: verify assembled URL targets our configured Xtream host
+  if (!isAllowedUpstreamUrl(url)) {
+    res.status(400).json({
+      error: 'Bad Request',
+      message: 'Invalid segment path',
+    });
+    return;
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), CONNECT_TIMEOUT_MS);
+
+  req.on('close', () => controller.abort());
+
+  try {
+    const upstream = await fetch(url, {
+      headers: { 'User-Agent': USER_AGENT },
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (!upstream.ok) {
+      res.status(upstream.status).json({
+        error: 'Upstream Error',
+        message: `Segment source returned ${upstream.status}`,
+      });
+      return;
+    }
+
+    const contentType = upstream.headers.get('content-type') || '';
+    const isPlaylist = contentType.includes('mpegurl') || segmentPath.endsWith('.m3u8');
+
+    if (isPlaylist) {
+      const text = await upstream.text();
+      const rewritten = rewriteM3u8(text, getXtreamBase());
+      res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+      res.send(rewritten);
+    } else {
+      pipeUpstream(upstream, req, res, controller, ['content-type', 'content-length']);
+    }
+  } catch (err: any) {
+    clearTimeout(timeout);
+    if (!res.headersSent) {
+      if (err.name === 'AbortError') {
+        if (!req.closed) {
+          res.status(504).json({ error: 'Segment source timed out' });
+        }
+      } else {
+        res.status(502).json({ error: 'Stream source unavailable' });
+      }
+    }
+  }
+});
+
+// GET /api/stream/:type/:id — Server-side stream proxy (CORS-safe)
+router.get('/:type/:id', authMiddleware, async (req: Request, res: Response) => {
   const { type, id } = req.params;
 
   if (!VALID_TYPES.includes(type as StreamType)) {
@@ -27,26 +182,57 @@ router.get('/url/:type/:id', authMiddleware, (req: Request, res: Response) => {
     return;
   }
 
-  const { host, port, username, password } = config.xtream;
+  const streamType = type as StreamType;
+  const url = buildXtreamUrl(streamType, id);
+  const isLive = streamType === 'live';
 
-  const formatMap: Record<StreamType, { path: string; ext: string; isLive: boolean }> = {
-    live: { path: 'live', ext: 'm3u8', isLive: true },
-    vod: { path: 'movie', ext: 'mp4', isLive: false },
-    series: { path: 'series', ext: 'mp4', isLive: false },
-  };
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), CONNECT_TIMEOUT_MS);
 
-  const { path, ext, isLive } = formatMap[type as StreamType];
-  const url = `http://${host}:${port}/${path}/${username}/${password}/${id}.${ext}`;
+  req.on('close', () => controller.abort());
 
-  res.json({ url, format: ext, isLive });
-});
+  try {
+    const headers: Record<string, string> = { 'User-Agent': USER_AGENT };
+    if (req.headers.range) {
+      headers['Range'] = req.headers.range;
+    }
 
-// Placeholder routes for future features
-router.all('*', (_req: Request, res: Response) => {
-  res.status(501).json({
-    error: 'Not Implemented',
-    message: 'Not implemented yet — coming in Phase 2/3',
-  });
+    const upstream = await fetch(url, {
+      headers,
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (!upstream.ok) {
+      res.status(upstream.status).json({
+        error: 'Upstream Error',
+        message: `Stream source returned ${upstream.status}`,
+      });
+      return;
+    }
+
+    if (isLive) {
+      // HLS playlist — rewrite URLs to route segments through our proxy
+      const text = await upstream.text();
+      const rewritten = rewriteM3u8(text, getXtreamBase());
+      res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+      res.send(rewritten);
+    } else {
+      // VOD/Series — pipe binary stream
+      pipeUpstream(upstream, req, res, controller, UPSTREAM_HEADERS);
+    }
+  } catch (err: any) {
+    clearTimeout(timeout);
+    if (!res.headersSent) {
+      if (err.name === 'AbortError') {
+        if (!req.closed) {
+          res.status(504).json({ error: 'Stream source timed out' });
+        }
+      } else {
+        res.status(502).json({ error: 'Stream source unavailable' });
+      }
+    }
+  }
 });
 
 export default router;

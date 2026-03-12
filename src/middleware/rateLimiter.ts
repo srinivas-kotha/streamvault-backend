@@ -15,3 +15,12 @@ export const apiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+// Higher limit for stream routes — HLS live streams generate frequent segment requests
+export const streamLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 600,
+  message: { error: 'Too Many Requests', message: 'Stream rate limit exceeded' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
