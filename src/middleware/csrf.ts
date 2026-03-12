@@ -5,6 +5,9 @@ const CSRF_COOKIE = 'sv_csrf';
 const CSRF_HEADER = 'x-csrf-token';
 const SAFE_METHODS = ['GET', 'HEAD', 'OPTIONS'];
 
+// Endpoints exempt from CSRF validation (unauthenticated — no session to hijack)
+const CSRF_EXEMPT_PATHS = ['/api/auth/login', '/api/auth/refresh'];
+
 export function csrfMiddleware(req: Request, res: Response, next: NextFunction): void {
   // Always ensure a CSRF cookie exists
   if (!req.cookies?.[CSRF_COOKIE]) {
@@ -25,6 +28,12 @@ export function csrfMiddleware(req: Request, res: Response, next: NextFunction):
 
   // Safe methods don't need CSRF validation
   if (SAFE_METHODS.includes(req.method)) {
+    next();
+    return;
+  }
+
+  // Exempt unauthenticated endpoints (no session to protect)
+  if (CSRF_EXEMPT_PATHS.includes(req.path)) {
     next();
     return;
   }
