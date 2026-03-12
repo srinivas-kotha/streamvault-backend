@@ -21,7 +21,7 @@ function buildXtreamUrl(type: StreamType, id: string): string {
   const { host, port, username, password } = config.xtream;
 
   const formatMap: Record<StreamType, { path: string; ext: string }> = {
-    live: { path: 'live', ext: 'ts' },
+    live: { path: 'live', ext: 'm3u8' },
     vod: { path: 'movie', ext: 'mp4' },
     series: { path: 'series', ext: 'mp4' },
   };
