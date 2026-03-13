@@ -61,4 +61,35 @@ router.put('/:contentId', authMiddleware, async (req: Request, res: Response) =>
   }
 });
 
+// DELETE /api/history/:contentId?content_type=channel|vod|series
+router.delete('/:contentId', authMiddleware, async (req: Request, res: Response) => {
+  try {
+    const paramsParsed = contentIdSchema.safeParse(req.params);
+    if (!paramsParsed.success) {
+      res.status(400).json({ error: 'Bad Request', message: 'Invalid content ID' });
+      return;
+    }
+
+    const contentType = req.query.content_type as string;
+    const validContentTypes = ['channel', 'vod', 'series'];
+    if (!contentType || !validContentTypes.includes(contentType)) {
+      res.status(400).json({ error: 'Bad Request', message: 'content_type must be one of: channel, vod, series' });
+      return;
+    }
+
+    const userId = req.user!.userId;
+    const contentId = parseInt(paramsParsed.data.contentId, 10);
+
+    await query(
+      'DELETE FROM sv_watch_history WHERE user_id = $1 AND content_id = $2 AND content_type = $3',
+      [userId, contentId, contentType],
+    );
+
+    res.json({ message: 'History item removed' });
+  } catch (err) {
+    console.error('[history] Failed to delete history item:', err instanceof Error ? err.message : err);
+    res.status(500).json({ error: 'Internal Server Error', message: 'Failed to remove history item' });
+  }
+});
+
 export default router;
