@@ -17,7 +17,7 @@ function getXtreamBase(): string {
   return `http://${host}:${port}/live/${username}/${password}/`;
 }
 
-function buildXtreamUrl(type: StreamType, id: string): string {
+function buildXtreamUrl(type: StreamType, id: string, extOverride?: string): string {
   const { host, port, username, password } = config.xtream;
 
   const formatMap: Record<StreamType, { path: string; ext: string }> = {
@@ -27,7 +27,7 @@ function buildXtreamUrl(type: StreamType, id: string): string {
   };
 
   const { path, ext } = formatMap[type];
-  return `http://${host}:${port}/${path}/${username}/${password}/${id}.${ext}`;
+  return `http://${host}:${port}/${path}/${username}/${password}/${id}.${extOverride || ext}`;
 }
 
 /** Validate that an assembled URL targets the configured Xtream host (SSRF protection). */
@@ -197,13 +197,35 @@ router.get('/:type/:id', authMiddleware, async (req: Request, res: Response) => 
       headers['Range'] = req.headers.range;
     }
 
-    const upstream = await fetch(url, {
+    let upstream = await fetch(url, {
       headers,
       signal: controller.signal,
     });
     clearTimeout(timeout);
 
-    if (!upstream.ok) {
+    // If M3U8 fails for live streams, fall back to raw .ts format
+    let isTsFallback = false;
+    if (!upstream.ok && isLive) {
+      const tsUrl = buildXtreamUrl(streamType, id, 'ts');
+      const tsController = new AbortController();
+      const tsTimeout = setTimeout(() => tsController.abort(), CONNECT_TIMEOUT_MS);
+      req.on('close', () => tsController.abort());
+
+      upstream = await fetch(tsUrl, {
+        headers,
+        signal: tsController.signal,
+      });
+      clearTimeout(tsTimeout);
+      isTsFallback = upstream.ok;
+
+      if (!upstream.ok) {
+        res.status(upstream.status).json({
+          error: 'Upstream Error',
+          message: `Stream source returned ${upstream.status}`,
+        });
+        return;
+      }
+    } else if (!upstream.ok) {
       res.status(upstream.status).json({
         error: 'Upstream Error',
         message: `Stream source returned ${upstream.status}`,
@@ -211,7 +233,11 @@ router.get('/:type/:id', authMiddleware, async (req: Request, res: Response) => 
       return;
     }
 
-    if (isLive) {
+    if (isTsFallback) {
+      // Raw TS stream — pipe directly
+      res.setHeader('X-Stream-Format', 'ts');
+      pipeUpstream(upstream, req, res, controller, UPSTREAM_HEADERS);
+    } else if (isLive) {
       // Check content-type to determine stream format
       const contentType = upstream.headers.get('content-type') || '';
       const isM3u8ByType = contentType.includes('mpegurl');
@@ -260,6 +286,73 @@ router.get('/:type/:id', authMiddleware, async (req: Request, res: Response) => 
       } else {
         res.status(502).json({ error: 'Stream source unavailable' });
       }
+    }
+  }
+});
+
+// HEAD /api/stream/:type/:id — Format probe (returns X-Stream-Format without body)
+router.head('/:type/:id', authMiddleware, async (req: Request, res: Response) => {
+  const { type, id } = req.params;
+
+  if (!VALID_TYPES.includes(type as StreamType)) {
+    res.status(400).end();
+    return;
+  }
+
+  if (!id || !/^\d+$/.test(id)) {
+    res.status(400).end();
+    return;
+  }
+
+  const streamType = type as StreamType;
+
+  if (streamType !== 'live') {
+    res.setHeader('X-Stream-Format', 'mp4');
+    res.status(200).end();
+    return;
+  }
+
+  // Probe M3U8 first, fall back to TS
+  // Use GET (not HEAD) — some Xtream servers reject HEAD with 405
+  // Abort immediately after getting status to avoid downloading the stream
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), CONNECT_TIMEOUT_MS);
+
+  try {
+    const url = buildXtreamUrl(streamType, id);
+    const upstream = await fetch(url, {
+      headers: { 'User-Agent': USER_AGENT },
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    controller.abort(); // Kill the stream — we only needed the status
+
+    if (upstream.ok) {
+      res.setHeader('X-Stream-Format', 'm3u8');
+      res.status(200).end();
+      return;
+    }
+
+    // M3U8 failed — try TS
+    const tsController = new AbortController();
+    const tsTimeout = setTimeout(() => tsController.abort(), CONNECT_TIMEOUT_MS);
+
+    const tsUpstream = await fetch(buildXtreamUrl(streamType, id, 'ts'), {
+      headers: { 'User-Agent': USER_AGENT },
+      signal: tsController.signal,
+    });
+    clearTimeout(tsTimeout);
+    tsController.abort(); // Kill the stream
+
+    if (tsUpstream.ok) {
+      res.setHeader('X-Stream-Format', 'ts');
+      res.status(200).end();
+    } else {
+      res.status(tsUpstream.status).end();
+    }
+  } catch {
+    if (!res.headersSent) {
+      res.status(502).end();
     }
   }
 });
