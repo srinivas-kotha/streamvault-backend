@@ -21,7 +21,7 @@ function buildXtreamUrl(type: StreamType, id: string, extOverride?: string): str
   const { host, port, username, password } = config.xtream;
 
   const formatMap: Record<StreamType, { path: string; ext: string }> = {
-    live: { path: 'live', ext: 'm3u8' },
+    live: { path: 'live', ext: 'ts' },
     vod: { path: 'movie', ext: 'mp4' },
     series: { path: 'series', ext: 'mp4' },
   };
@@ -197,35 +197,13 @@ router.get('/:type/:id', authMiddleware, async (req: Request, res: Response) => 
       headers['Range'] = req.headers.range;
     }
 
-    let upstream = await fetch(url, {
+    const upstream = await fetch(url, {
       headers,
       signal: controller.signal,
     });
     clearTimeout(timeout);
 
-    // If M3U8 fails for live streams, fall back to raw .ts format
-    let isTsFallback = false;
-    if (!upstream.ok && isLive) {
-      const tsUrl = buildXtreamUrl(streamType, id, 'ts');
-      const tsController = new AbortController();
-      const tsTimeout = setTimeout(() => tsController.abort(), CONNECT_TIMEOUT_MS);
-      req.on('close', () => tsController.abort());
-
-      upstream = await fetch(tsUrl, {
-        headers,
-        signal: tsController.signal,
-      });
-      clearTimeout(tsTimeout);
-      isTsFallback = upstream.ok;
-
-      if (!upstream.ok) {
-        res.status(upstream.status).json({
-          error: 'Upstream Error',
-          message: `Stream source returned ${upstream.status}`,
-        });
-        return;
-      }
-    } else if (!upstream.ok) {
+    if (!upstream.ok) {
       res.status(upstream.status).json({
         error: 'Upstream Error',
         message: `Stream source returned ${upstream.status}`,
@@ -233,45 +211,10 @@ router.get('/:type/:id', authMiddleware, async (req: Request, res: Response) => 
       return;
     }
 
-    if (isTsFallback) {
-      // Raw TS stream — pipe directly
+    if (isLive) {
+      // Live streams default to .ts — pipe directly as MPEG-TS
       res.setHeader('X-Stream-Format', 'ts');
       pipeUpstream(upstream, req, res, controller, UPSTREAM_HEADERS);
-    } else if (isLive) {
-      // Check content-type to determine stream format
-      const contentType = upstream.headers.get('content-type') || '';
-      const isM3u8ByType = contentType.includes('mpegurl');
-
-      if (isM3u8ByType) {
-        // HLS playlist (detected by content-type) — rewrite URLs
-        const text = await upstream.text();
-        const rewritten = rewriteM3u8(text, getXtreamBase());
-        res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
-        res.setHeader('X-Stream-Format', 'm3u8');
-        res.send(rewritten);
-      } else if (contentType.includes('text/') || contentType.includes('octet-stream') || !contentType) {
-        // Ambiguous content-type — sniff first bytes to detect M3U8 vs binary
-        const arrayBuf = await upstream.arrayBuffer();
-        const buf = Buffer.from(arrayBuf);
-        const prefix = buf.subarray(0, 7).toString('utf-8');
-
-        if (prefix === '#EXTM3U') {
-          const text = buf.toString('utf-8');
-          const rewritten = rewriteM3u8(text, getXtreamBase());
-          res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
-          res.setHeader('X-Stream-Format', 'm3u8');
-          res.send(rewritten);
-        } else {
-          // Binary data with ambiguous content-type — pipe as TS
-          res.setHeader('X-Stream-Format', 'ts');
-          res.setHeader('Content-Type', 'video/mp2t');
-          res.send(buf);
-        }
-      } else {
-        // TS or other binary stream — pipe directly
-        res.setHeader('X-Stream-Format', 'ts');
-        pipeUpstream(upstream, req, res, controller, UPSTREAM_HEADERS);
-      }
     } else {
       // VOD/Series — pipe binary stream
       pipeUpstream(upstream, req, res, controller, UPSTREAM_HEADERS);
@@ -286,73 +229,6 @@ router.get('/:type/:id', authMiddleware, async (req: Request, res: Response) => 
       } else {
         res.status(502).json({ error: 'Stream source unavailable' });
       }
-    }
-  }
-});
-
-// HEAD /api/stream/:type/:id — Format probe (returns X-Stream-Format without body)
-router.head('/:type/:id', authMiddleware, async (req: Request, res: Response) => {
-  const { type, id } = req.params;
-
-  if (!VALID_TYPES.includes(type as StreamType)) {
-    res.status(400).end();
-    return;
-  }
-
-  if (!id || !/^\d+$/.test(id)) {
-    res.status(400).end();
-    return;
-  }
-
-  const streamType = type as StreamType;
-
-  if (streamType !== 'live') {
-    res.setHeader('X-Stream-Format', 'mp4');
-    res.status(200).end();
-    return;
-  }
-
-  // Probe M3U8 first, fall back to TS
-  // Use GET (not HEAD) — some Xtream servers reject HEAD with 405
-  // Abort immediately after getting status to avoid downloading the stream
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), CONNECT_TIMEOUT_MS);
-
-  try {
-    const url = buildXtreamUrl(streamType, id);
-    const upstream = await fetch(url, {
-      headers: { 'User-Agent': USER_AGENT },
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-    controller.abort(); // Kill the stream — we only needed the status
-
-    if (upstream.ok) {
-      res.setHeader('X-Stream-Format', 'm3u8');
-      res.status(200).end();
-      return;
-    }
-
-    // M3U8 failed — try TS
-    const tsController = new AbortController();
-    const tsTimeout = setTimeout(() => tsController.abort(), CONNECT_TIMEOUT_MS);
-
-    const tsUpstream = await fetch(buildXtreamUrl(streamType, id, 'ts'), {
-      headers: { 'User-Agent': USER_AGENT },
-      signal: tsController.signal,
-    });
-    clearTimeout(tsTimeout);
-    tsController.abort(); // Kill the stream
-
-    if (tsUpstream.ok) {
-      res.setHeader('X-Stream-Format', 'ts');
-      res.status(200).end();
-    } else {
-      res.status(tsUpstream.status).end();
-    }
-  } catch {
-    if (!res.headersSent) {
-      res.status(502).end();
     }
   }
 });
