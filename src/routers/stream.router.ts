@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { Readable } from 'node:stream';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { authMiddleware } from '../middleware/auth';
 import { config } from '../config';
 
@@ -212,9 +213,52 @@ router.get('/:type/:id', authMiddleware, async (req: Request, res: Response) => 
     }
 
     if (isLive) {
-      // Live streams default to .ts — pipe directly as MPEG-TS
+      // Live streams: transcode audio to AAC via FFmpeg (Chrome MSE doesn't support AC-3/MP2).
+      // Video is passed through untouched — only audio is re-encoded.
       res.setHeader('X-Stream-Format', 'ts');
-      pipeUpstream(upstream, req, res, controller, UPSTREAM_HEADERS);
+      res.setHeader('Content-Type', 'video/mp2t');
+
+      const ffmpeg: ChildProcess = spawn('ffmpeg', [
+        '-hide_banner', '-loglevel', 'error',
+        '-i', 'pipe:0',           // Read from stdin
+        '-c:v', 'copy',           // Video passthrough (no re-encode)
+        '-c:a', 'aac',            // Transcode audio to AAC
+        '-b:a', '128k',           // Audio bitrate
+        '-ac', '2',               // Stereo
+        '-f', 'mpegts',           // Output as MPEG-TS
+        'pipe:1',                 // Write to stdout
+      ], { stdio: ['pipe', 'pipe', 'pipe'] });
+
+      // Pipe upstream TS → FFmpeg stdin
+      const upstreamReadable = Readable.fromWeb(upstream.body as ReadableStream<Uint8Array>);
+      upstreamReadable.pipe(ffmpeg.stdin!);
+
+      // Handle stdin errors (e.g., FFmpeg exits before all input consumed)
+      ffmpeg.stdin!.on('error', () => { /* expected when FFmpeg exits early */ });
+
+      // Pipe FFmpeg stdout → client response
+      ffmpeg.stdout!.pipe(res);
+
+      // Log FFmpeg errors (don't crash)
+      ffmpeg.stderr!.on('data', () => { /* suppress ffmpeg log spam */ });
+
+      // Cleanup on client disconnect
+      req.on('close', () => {
+        controller.abort();
+        upstreamReadable.destroy();
+        ffmpeg.kill('SIGTERM');
+      });
+
+      // Cleanup if FFmpeg exits unexpectedly
+      ffmpeg.on('close', () => {
+        if (!res.writableEnded) res.end();
+      });
+
+      // Handle upstream read errors
+      upstreamReadable.on('error', () => {
+        ffmpeg.kill('SIGTERM');
+        if (!res.writableEnded) res.end();
+      });
     } else {
       // VOD/Series — pipe binary stream
       pipeUpstream(upstream, req, res, controller, UPSTREAM_HEADERS);
