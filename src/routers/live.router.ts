@@ -1,9 +1,9 @@
 import { Router, Request, Response } from 'express';
 import { authMiddleware } from '../middleware/auth';
-import { xtreamService } from '../services/xtream.service';
+import { getProvider } from '../providers';
+import type { Category, Channel } from '../providers';
 import { categoryIdSchema, streamIdSchema } from '../utils/validators';
 import { cacheGet, cacheSet, CacheTTL } from '../services/cache.service';
-import type { XtreamCategory, XtreamLiveStream } from '../types/xtream.types';
 
 const router = Router();
 
@@ -39,29 +39,29 @@ function isTeluguCategory(catName: string): boolean {
 router.get('/featured', authMiddleware, async (_req: Request, res: Response) => {
   try {
     const cacheKey = 'xtream:live:featured';
-    const cached = cacheGet<XtreamLiveStream[]>(cacheKey);
+    const cached = cacheGet<Channel[]>(cacheKey);
     if (cached) {
       res.json(cached);
       return;
     }
 
     // 1. Fetch all live categories
-    const categories: XtreamCategory[] = await xtreamService.getCategories('live');
+    const categories: Category[] = await getProvider().getCategories('live');
 
     // 2. Filter to Telugu/Indian categories
     const teluguCats = categories.filter((cat) => isTeluguCategory(cat.category_name));
 
     // 3. Fetch streams from each Telugu category in parallel
     const streamResults = await Promise.allSettled(
-      teluguCats.map((cat) => xtreamService.getStreams(cat.category_id, 'live')),
+      teluguCats.map((cat) => getProvider().getStreams(cat.category_id, 'live')),
     );
 
     // 4. Flatten and deduplicate
-    const allStreams: XtreamLiveStream[] = [];
+    const allStreams: Channel[] = [];
     const seen = new Set<number>();
     for (const result of streamResults) {
       if (result.status === 'fulfilled') {
-        for (const stream of result.value as XtreamLiveStream[]) {
+        for (const stream of result.value as Channel[]) {
           if (!seen.has(stream.stream_id)) {
             seen.add(stream.stream_id);
             allStreams.push(stream);
@@ -91,7 +91,7 @@ router.get('/featured', authMiddleware, async (_req: Request, res: Response) => 
 // GET /api/live/categories
 router.get('/categories', authMiddleware, async (_req: Request, res: Response) => {
   try {
-    const categories = await xtreamService.getCategories('live');
+    const categories = await getProvider().getCategories('live');
     res.json(categories);
   } catch (err) {
     console.error('[live] Failed to fetch categories:', err instanceof Error ? err.message : err);
@@ -108,7 +108,7 @@ router.get('/streams/:catId', authMiddleware, async (req: Request, res: Response
       return;
     }
 
-    const streams = await xtreamService.getStreams(parsed.data.catId, 'live');
+    const streams = await getProvider().getStreams(parsed.data.catId, 'live');
     res.json(streams);
   } catch (err) {
     console.error('[live] Failed to fetch streams:', err instanceof Error ? err.message : err);
@@ -125,7 +125,7 @@ router.get('/epg/:streamId', authMiddleware, async (req: Request, res: Response)
       return;
     }
 
-    const epg = await xtreamService.getEPG(parsed.data.streamId);
+    const epg = await getProvider().getEPG(parsed.data.streamId);
     res.json(epg);
   } catch (err) {
     console.error('[live] Failed to fetch EPG:', err instanceof Error ? err.message : err);

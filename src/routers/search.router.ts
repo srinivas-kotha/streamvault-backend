@@ -1,17 +1,17 @@
 import { Router, Request, Response } from 'express';
 import { authMiddleware } from '../middleware/auth';
-import { xtreamService } from '../services/xtream.service';
+import { getProvider } from '../providers';
+import type { Channel, VODItem, SeriesItem } from '../providers';
 import { cacheGet, cacheSet, CacheTTL } from '../services/cache.service';
 import { searchSchema } from '../utils/validators';
-import type { XtreamLiveStream, XtreamVODStream, XtreamSeriesItem } from '../types/xtream.types';
 
 const router = Router();
 const MAX_RESULTS_PER_TYPE = 50;
 
 interface SearchResults {
-  live: XtreamLiveStream[];
-  vod: XtreamVODStream[];
-  series: XtreamSeriesItem[];
+  live: Channel[];
+  vod: VODItem[];
+  series: SeriesItem[];
 }
 
 function matchesQuery(name: string, query: string): boolean {
@@ -38,9 +38,9 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
 
     // Fetch all streams for each type (use category_id=0 to get all)
     const [liveStreams, vodStreams, seriesItems] = await Promise.allSettled([
-      xtreamService.getStreams('0', 'live'),
-      xtreamService.getStreams('0', 'vod'),
-      xtreamService.getStreams('0', 'series'),
+      getProvider().getStreams('0', 'live'),
+      getProvider().getStreams('0', 'vod'),
+      getProvider().getStreams('0', 'series'),
     ]);
 
     const results: SearchResults = {
@@ -50,19 +50,19 @@ router.get('/', authMiddleware, async (req: Request, res: Response) => {
     };
 
     if (liveStreams.status === 'fulfilled' && Array.isArray(liveStreams.value)) {
-      results.live = (liveStreams.value as XtreamLiveStream[])
+      results.live = (liveStreams.value as Channel[])
         .filter((s) => matchesQuery(s.name, q))
         .slice(0, MAX_RESULTS_PER_TYPE);
     }
 
     if (vodStreams.status === 'fulfilled' && Array.isArray(vodStreams.value)) {
-      results.vod = (vodStreams.value as XtreamVODStream[])
+      results.vod = (vodStreams.value as VODItem[])
         .filter((s) => matchesQuery(s.name, q))
         .slice(0, MAX_RESULTS_PER_TYPE);
     }
 
     if (seriesItems.status === 'fulfilled' && Array.isArray(seriesItems.value)) {
-      results.series = (seriesItems.value as XtreamSeriesItem[])
+      results.series = (seriesItems.value as SeriesItem[])
         .filter((s) => matchesQuery(s.name, q))
         .slice(0, MAX_RESULTS_PER_TYPE);
     }

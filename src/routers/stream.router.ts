@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { Readable } from 'node:stream';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { authMiddleware } from '../middleware/auth';
-import { config } from '../config';
+import { getProvider } from '../providers';
 
 const router = Router();
 
@@ -10,49 +10,30 @@ const VALID_TYPES = ['live', 'vod', 'series'] as const;
 type StreamType = (typeof VALID_TYPES)[number];
 
 const UPSTREAM_HEADERS = ['content-type', 'content-length', 'content-range', 'accept-ranges'];
-const USER_AGENT = 'IPTV Smarters Pro/2.2.2.1';
 const CONNECT_TIMEOUT_MS = 30_000;
 
-function getXtreamBase(): string {
-  const { host, port, username, password } = config.xtream;
-  return `http://${host}:${port}/live/${username}/${password}/`;
-}
-
-function buildXtreamUrl(type: StreamType, id: string, extOverride?: string): string {
-  const { host, port, username, password } = config.xtream;
-
-  const formatMap: Record<StreamType, { path: string; ext: string }> = {
-    live: { path: 'live', ext: 'ts' },
-    vod: { path: 'movie', ext: 'mp4' },
-    series: { path: 'series', ext: 'mp4' },
-  };
-
-  const { path, ext } = formatMap[type];
-  return `http://${host}:${port}/${path}/${username}/${password}/${id}.${extOverride || ext}`;
-}
-
-/** Validate that an assembled URL targets the configured Xtream host (SSRF protection). */
-function isAllowedUpstreamUrl(url: string): boolean {
+/** Validate that an assembled URL targets the provider's allowed host (SSRF protection). */
+function isAllowedUpstreamUrl(url: string, allowedHost: { hostname: string; port: string }): boolean {
   try {
     const parsed = new URL(url);
-    return parsed.hostname === config.xtream.host && parsed.port === String(config.xtream.port);
+    return parsed.hostname === allowedHost.hostname && parsed.port === allowedHost.port;
   } catch {
     return false;
   }
 }
 
 /** Rewrite M3U8 playlist URLs to route through our segment proxy. */
-function rewriteM3u8(text: string, xtreamBase: string): string {
+function rewriteM3u8(text: string, baseUrl: string): string {
   return text
     .split('\n')
     .map((line) => {
       const trimmed = line.trim();
       if (!trimmed || trimmed.startsWith('#')) return line;
 
-      // Absolute URL from Xtream — strip base to get segment path
+      // Absolute URL — strip base to get segment path
       if (trimmed.startsWith('http')) {
-        if (trimmed.startsWith(xtreamBase)) {
-          const segmentPath = trimmed.slice(xtreamBase.length);
+        if (trimmed.startsWith(baseUrl)) {
+          const segmentPath = trimmed.slice(baseUrl.length);
           return `/api/stream/live/segment/${segmentPath}`;
         }
         // Non-matching absolute URL (CDN, different host) — skip rewriting, leave as-is
@@ -106,11 +87,11 @@ router.get('/live/segment/*', authMiddleware, async (req: Request, res: Response
     return;
   }
 
-  const { host, port, username, password } = config.xtream;
-  const url = `http://${host}:${port}/live/${username}/${password}/${segmentPath}`;
+  const provider = getProvider();
+  const proxyInfo = provider.getSegmentProxyInfo(segmentPath);
 
-  // SSRF protection: verify assembled URL targets our configured Xtream host
-  if (!isAllowedUpstreamUrl(url)) {
+  // SSRF protection: verify assembled URL targets our configured provider host
+  if (!isAllowedUpstreamUrl(proxyInfo.url, proxyInfo.allowedHost)) {
     res.status(400).json({
       error: 'Bad Request',
       message: 'Invalid segment path',
@@ -124,8 +105,8 @@ router.get('/live/segment/*', authMiddleware, async (req: Request, res: Response
   req.on('close', () => controller.abort());
 
   try {
-    const upstream = await fetch(url, {
-      headers: { 'User-Agent': USER_AGENT },
+    const upstream = await fetch(proxyInfo.url, {
+      headers: proxyInfo.headers,
       signal: controller.signal,
     });
     clearTimeout(timeout);
@@ -143,7 +124,7 @@ router.get('/live/segment/*', authMiddleware, async (req: Request, res: Response
 
     if (isPlaylist) {
       const text = await upstream.text();
-      const rewritten = rewriteM3u8(text, getXtreamBase());
+      const rewritten = rewriteM3u8(text, proxyInfo.baseUrl);
       res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
       res.send(rewritten);
     } else {
@@ -184,7 +165,8 @@ router.get('/:type/:id', authMiddleware, async (req: Request, res: Response) => 
   }
 
   const streamType = type as StreamType;
-  const url = buildXtreamUrl(streamType, id);
+  const provider = getProvider();
+  const proxyInfo = provider.getStreamProxyInfo(id, streamType);
   const isLive = streamType === 'live';
 
   const controller = new AbortController();
@@ -193,12 +175,12 @@ router.get('/:type/:id', authMiddleware, async (req: Request, res: Response) => 
   req.on('close', () => controller.abort());
 
   try {
-    const headers: Record<string, string> = { 'User-Agent': USER_AGENT };
+    const headers: Record<string, string> = { ...proxyInfo.headers };
     if (req.headers.range) {
       headers['Range'] = req.headers.range;
     }
 
-    const upstream = await fetch(url, {
+    const upstream = await fetch(proxyInfo.url, {
       headers,
       signal: controller.signal,
     });
