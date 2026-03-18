@@ -10,6 +10,7 @@ function optionalEnv(key: string, fallback: string): string {
 
 export const config = {
   nodeEnv: optionalEnv('NODE_ENV', 'development'),
+  providerType: optionalEnv('PROVIDER_TYPE', 'xtream') as 'xtream',
   port: parseInt(optionalEnv('PORT', '3001'), 10),
 
   postgres: {

@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { authMiddleware } from '../middleware/auth';
-import { xtreamService } from '../services/xtream.service';
+import { getProvider } from '../providers';
 import { categoryIdSchema, seriesIdSchema } from '../utils/validators';
 
 const router = Router();
@@ -8,7 +8,7 @@ const router = Router();
 // GET /api/series/categories
 router.get('/categories', authMiddleware, async (_req: Request, res: Response) => {
   try {
-    const categories = await xtreamService.getCategories('series');
+    const categories = await getProvider().getCategories('series');
     res.json(categories);
   } catch (err) {
     console.error('[series] Failed to fetch categories:', err instanceof Error ? err.message : err);
@@ -25,7 +25,7 @@ router.get('/list/:catId', authMiddleware, async (req: Request, res: Response) =
       return;
     }
 
-    const series = await xtreamService.getStreams(parsed.data.catId, 'series');
+    const series = await getProvider().getStreams(parsed.data.catId, 'series');
     res.json(series);
   } catch (err) {
     console.error('[series] Failed to fetch list:', err instanceof Error ? err.message : err);
@@ -42,7 +42,7 @@ router.get('/info/:seriesId', authMiddleware, async (req: Request, res: Response
       return;
     }
 
-    const info = await xtreamService.getSeriesInfo(parsed.data.seriesId);
+    const info = await getProvider().getSeriesInfo(parsed.data.seriesId);
     res.json(info);
   } catch (err) {
     console.error('[series] Failed to fetch series info:', err instanceof Error ? err.message : err);

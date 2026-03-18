@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { isProviderHealthy } from '../services/xtream.service';
+import { getProvider } from '../providers';
 import type { HealthResponse } from '../types/api.types';
 
 const router = Router();
@@ -7,7 +7,7 @@ const startTime = Date.now();
 
 // GET /health
 router.get('/health', (_req: Request, res: Response) => {
-  const healthy = isProviderHealthy();
+  const healthy = getProvider().isHealthy();
 
   const response: HealthResponse = {
     status: healthy ? 'ok' : 'degraded',

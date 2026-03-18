@@ -9,6 +9,7 @@ import { errorHandler } from './middleware/errorHandler';
 import { closePool } from './services/db.service';
 import { recoverDownloadQueue } from './services/download.service';
 import { killAllFFmpeg } from './utils/ffmpeg';
+import { initProvider } from './providers';
 
 // Router imports — built by other agents
 import authRouter from './routers/auth.router';
@@ -82,6 +83,9 @@ async function startServer(): Promise<void> {
 
     // Kill orphaned FFmpeg processes from previous run
     killAllFFmpeg();
+
+    // Initialize stream provider
+    initProvider();
 
     const server = app.listen(config.port, () => {
       console.log(`StreamVault API listening on port ${config.port}`);

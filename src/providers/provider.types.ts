@@ -1,10 +1,16 @@
-export interface XtreamCategory {
+// --- Content Type ---
+
+export type ContentType = 'live' | 'vod' | 'series';
+
+// --- Generic Domain Types ---
+
+export interface Category {
   category_id: string;
   category_name: string;
   parent_id: number;
 }
 
-export interface XtreamLiveStream {
+export interface Channel {
   num: number;
   name: string;
   stream_type: string;
@@ -21,7 +27,7 @@ export interface XtreamLiveStream {
   tv_archive_duration: number;
 }
 
-export interface XtreamVODStream {
+export interface VODItem {
   num: number;
   name: string;
   stream_type: string;
@@ -38,7 +44,7 @@ export interface XtreamVODStream {
   direct_source: string;
 }
 
-export interface XtreamVODInfo {
+export interface VODInfo {
   info: {
     movie_image: string;
     tmdb_id: string;
@@ -64,7 +70,7 @@ export interface XtreamVODInfo {
   };
 }
 
-export interface XtreamSeriesItem {
+export interface SeriesItem {
   num: number;
   name: string;
   series_id: number;
@@ -82,7 +88,7 @@ export interface XtreamSeriesItem {
   category_ids: number[];
 }
 
-export interface XtreamSeriesInfo {
+export interface SeriesInfo {
   seasons: Array<{
     air_date: string;
     episode_count: number;
@@ -122,7 +128,7 @@ export interface XtreamSeriesInfo {
   >;
 }
 
-export interface XtreamEPGItem {
+export interface EPGEntry {
   id: string;
   epg_id: string;
   title: string;
@@ -135,7 +141,25 @@ export interface XtreamEPGItem {
   stop_timestamp: string;
 }
 
-export interface XtreamAuthResponse {
+export interface StreamURL {
+  url: string;
+  format: string;
+}
+
+export interface StreamProxyInfo {
+  /** Full upstream URL to fetch */
+  url: string;
+  /** Stream format: 'ts' | 'mp4' | 'm3u8' */
+  format: string;
+  /** Headers to send to upstream */
+  headers: Record<string, string>;
+  /** For M3U8 rewriting: base URL to strip from absolute URLs */
+  baseUrl: string;
+  /** SSRF check: hostname + port the URL must match */
+  allowedHost: { hostname: string; port: string };
+}
+
+export interface AuthResponse {
   user_info: {
     username: string;
     password: string;
@@ -159,4 +183,31 @@ export interface XtreamAuthResponse {
     timestamp_now: number;
     time_now: string;
   };
+}
+
+// --- Provider Interface ---
+
+export interface IStreamProvider {
+  readonly name: string;
+
+  // Content browsing
+  getCategories(type: ContentType): Promise<Category[]>;
+  getStreams(categoryId: string, type: ContentType): Promise<(Channel | VODItem | SeriesItem)[]>;
+  getVODInfo(vodId: string): Promise<VODInfo>;
+  getSeriesInfo(seriesId: string): Promise<SeriesInfo>;
+
+  // EPG
+  getEPG(streamId: string): Promise<EPGEntry[]>;
+  getFullEPG(): Promise<EPGEntry[]>;
+
+  // Streaming
+  getStreamURL(streamId: string, type: 'live' | 'vod'): string;
+  getStreamProxyInfo(streamId: string, type: ContentType): StreamProxyInfo;
+  getSegmentProxyInfo(segmentPath: string): StreamProxyInfo;
+
+  // Health
+  isHealthy(): boolean;
+
+  // Auth (optional — not all providers need it)
+  authenticate?(): Promise<AuthResponse>;
 }
