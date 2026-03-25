@@ -1,6 +1,6 @@
 // --- Content Type ---
 
-export type ContentType = 'live' | 'vod' | 'series';
+export type ContentType = "live" | "vod" | "series";
 
 // --- Generic Domain Types ---
 
@@ -185,6 +185,97 @@ export interface AuthResponse {
   };
 }
 
+// === Phase 2: Provider-Agnostic Types ===
+
+export interface CatalogCategory {
+  id: string;
+  name: string;
+  parentId: string | null;
+  type: ContentType;
+  count?: number;
+}
+
+export interface CatalogItem {
+  id: string;
+  name: string;
+  type: ContentType;
+  categoryId: string;
+  icon: string | null;
+  added: string | null;
+  isAdult: boolean;
+  rating?: string;
+  genre?: string;
+  year?: string;
+}
+
+export interface SeasonInfo {
+  seasonNumber: number;
+  name: string;
+  episodeCount: number;
+  icon?: string;
+}
+
+export interface EpisodeInfo {
+  id: string;
+  episodeNumber: number;
+  title: string;
+  containerExtension?: string;
+  duration?: number;
+  plot?: string;
+  rating?: string;
+  icon?: string;
+  added?: string;
+}
+
+export interface CatalogItemDetail extends CatalogItem {
+  plot?: string;
+  cast?: string;
+  director?: string;
+  duration?: string;
+  durationSecs?: number;
+  containerExtension?: string;
+  backdropUrl?: string;
+  tmdbId?: string;
+  seasons?: SeasonInfo[];
+  episodes?: Record<string, EpisodeInfo[]>;
+}
+
+export interface StreamInfo {
+  url: string;
+  format: "ts" | "mp4" | "m3u8" | "rtmp" | "unknown";
+  headers: Record<string, string>;
+  allowedHosts: Array<{ hostname: string; port: string }>;
+  qualities?: Array<{ label: string; url: string; bandwidth?: number }>;
+}
+
+// Normalized EPG entry (will replace old EPGEntry in PR 2)
+export interface NormalizedEPGEntry {
+  id: string;
+  channelId: string;
+  title: string;
+  description: string;
+  start: string; // ISO 8601
+  end: string; // ISO 8601
+  category?: string;
+  icon?: string;
+}
+
+export interface AccountInfo {
+  username?: string;
+  maxConnections?: number;
+  activeConnections?: number;
+  expiryDate?: string;
+  isTrial?: boolean;
+  status?: "active" | "expired" | "banned" | "disabled";
+  allowedFormats?: string[];
+}
+
+export interface CatchupInfo {
+  streamId: string;
+  available: boolean;
+  maxDays: number;
+}
+
 // --- Provider Interface ---
 
 export interface IStreamProvider {
@@ -192,7 +283,10 @@ export interface IStreamProvider {
 
   // Content browsing
   getCategories(type: ContentType): Promise<Category[]>;
-  getStreams(categoryId: string, type: ContentType): Promise<(Channel | VODItem | SeriesItem)[]>;
+  getStreams(
+    categoryId: string,
+    type: ContentType,
+  ): Promise<(Channel | VODItem | SeriesItem)[]>;
   getVODInfo(vodId: string): Promise<VODInfo>;
   getSeriesInfo(seriesId: string): Promise<SeriesInfo>;
 
@@ -201,7 +295,7 @@ export interface IStreamProvider {
   getFullEPG(): Promise<EPGEntry[]>;
 
   // Streaming
-  getStreamURL(streamId: string, type: 'live' | 'vod'): string;
+  getStreamURL(streamId: string, type: "live" | "vod"): string;
   getStreamProxyInfo(streamId: string, type: ContentType): StreamProxyInfo;
   getSegmentProxyInfo(segmentPath: string): StreamProxyInfo;
 
