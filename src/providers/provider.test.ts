@@ -27,56 +27,6 @@ describe("XtreamProvider", () => {
     expect(provider.isHealthy()).toBe(true);
   });
 
-  describe("getStreamURL", () => {
-    it("builds live stream URL with .ts extension", () => {
-      const url = provider.getStreamURL("123", "live");
-      expect(url).toBe(
-        "http://test.example.com:8080/live/testuser/testpass/123.ts",
-      );
-    });
-
-    it("builds VOD stream URL with .mp4 extension", () => {
-      const url = provider.getStreamURL("456", "vod");
-      expect(url).toBe(
-        "http://test.example.com:8080/vod/testuser/testpass/456.mp4",
-      );
-    });
-  });
-
-  describe("getStreamProxyInfo", () => {
-    it("returns correct proxy info for live stream", () => {
-      const info = provider.getStreamProxyInfo("123", "live");
-      expect(info.url).toBe(
-        "http://test.example.com:8080/live/testuser/testpass/123.ts",
-      );
-      expect(info.format).toBe("ts");
-      expect(info.headers["User-Agent"]).toBe("IPTV Smarters Pro/2.2.2.1");
-      expect(info.baseUrl).toBe(
-        "http://test.example.com:8080/live/testuser/testpass/",
-      );
-      expect(info.allowedHost).toEqual({
-        hostname: "test.example.com",
-        port: "8080",
-      });
-    });
-
-    it("returns correct proxy info for VOD stream", () => {
-      const info = provider.getStreamProxyInfo("456", "vod");
-      expect(info.url).toBe(
-        "http://test.example.com:8080/movie/testuser/testpass/456.mp4",
-      );
-      expect(info.format).toBe("mp4");
-    });
-
-    it("returns correct proxy info for series stream", () => {
-      const info = provider.getStreamProxyInfo("789", "series");
-      expect(info.url).toBe(
-        "http://test.example.com:8080/series/testuser/testpass/789.mp4",
-      );
-      expect(info.format).toBe("mp4");
-    });
-  });
-
   describe("getSegmentProxyInfo", () => {
     it("returns correct info for TS segment", () => {
       const info = provider.getSegmentProxyInfo("stream123.ts");
@@ -203,8 +153,6 @@ describe("IStreamProvider contract", () => {
     expect(typeof provider.getSeriesInfo).toBe("function");
     expect(typeof provider.getEPG).toBe("function");
     expect(typeof provider.getFullEPG).toBe("function");
-    expect(typeof provider.getStreamURL).toBe("function");
-    expect(typeof provider.getStreamProxyInfo).toBe("function");
     expect(typeof provider.getSegmentProxyInfo).toBe("function");
     expect(typeof provider.getStreamInfo).toBe("function");
     expect(typeof provider.isHealthy).toBe("function");

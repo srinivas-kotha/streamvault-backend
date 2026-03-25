@@ -1,6 +1,5 @@
-// TDD RED phase — these tests MUST fail until xtream.provider.ts is updated (PR 2).
-// They define the contract: every provider method must return normalized types
-// (CatalogCategory, CatalogItem, CatalogItemDetail, NormalizedEPGEntry) by
+// These tests define the contract: every provider method must return normalized types
+// (CatalogCategory, CatalogItem, CatalogItemDetail, EPGEntry) by
 // running raw Xtream API responses through the adapter functions.
 //
 // Mocking strategy:
@@ -15,7 +14,7 @@ import type {
   CatalogCategory,
   CatalogItem,
   CatalogItemDetail,
-  NormalizedEPGEntry,
+  EPGEntry,
 } from "../provider.types";
 import type {
   XtreamCategory,
@@ -814,10 +813,10 @@ describe("XtreamProvider.getSeriesInfo() — returns CatalogItemDetail", () => {
 });
 
 // ---------------------------------------------------------------------------
-// getEPG() — returns NormalizedEPGEntry[]
+// getEPG() — returns EPGEntry[]
 // ---------------------------------------------------------------------------
 
-describe("XtreamProvider.getEPG() — returns NormalizedEPGEntry[]", () => {
+describe("XtreamProvider.getEPG() — returns EPGEntry[]", () => {
   let provider: XtreamProvider;
 
   beforeEach(() => {
@@ -829,7 +828,7 @@ describe("XtreamProvider.getEPG() — returns NormalizedEPGEntry[]", () => {
     vi.restoreAllMocks();
   });
 
-  it("returns NormalizedEPGEntry[] with camelCase channelId field", async () => {
+  it("returns EPGEntry[] with camelCase channelId field", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({
@@ -875,7 +874,7 @@ describe("XtreamProvider.getEPG() — returns NormalizedEPGEntry[]", () => {
 
     const result = await provider.getEPG("100");
 
-    expect(result[0]).toEqual<NormalizedEPGEntry>({
+    expect(result[0]).toEqual<EPGEntry>({
       id: "epg999",
       channelId: "cnn.us",
       title: "World News Tonight",
@@ -919,10 +918,10 @@ describe("XtreamProvider.getEPG() — returns NormalizedEPGEntry[]", () => {
 });
 
 // ---------------------------------------------------------------------------
-// getFullEPG() — returns NormalizedEPGEntry[]
+// getFullEPG() — returns EPGEntry[]
 // ---------------------------------------------------------------------------
 
-describe("XtreamProvider.getFullEPG() — returns NormalizedEPGEntry[]", () => {
+describe("XtreamProvider.getFullEPG() — returns EPGEntry[]", () => {
   let provider: XtreamProvider;
 
   beforeEach(() => {
@@ -935,7 +934,7 @@ describe("XtreamProvider.getFullEPG() — returns NormalizedEPGEntry[]", () => {
     vi.restoreAllMocks();
   });
 
-  it("returns NormalizedEPGEntry[] with channelId (not epg_id)", async () => {
+  it("returns EPGEntry[] with channelId (not epg_id)", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn().mockResolvedValue({

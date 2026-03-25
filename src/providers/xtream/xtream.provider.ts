@@ -5,10 +5,10 @@ import type {
   CatalogCategory,
   CatalogItem,
   CatalogItemDetail,
-  NormalizedEPGEntry,
+  EPGEntry,
   StreamProxyInfo,
   StreamInfo,
-  AuthResponse,
+  AccountInfo,
 } from "../provider.types";
 import type {
   XtreamCategory,
@@ -28,6 +28,7 @@ import {
   adaptSeriesInfo,
   adaptEPGItem,
   adaptCategory,
+  adaptAuthResponse,
 } from "./xtream.adapters";
 
 interface XtreamConfig {
@@ -72,12 +73,13 @@ export class XtreamProvider extends BaseStreamProvider {
     return { "User-Agent": USER_AGENT };
   }
 
-  async authenticate(): Promise<AuthResponse> {
+  async authenticate(): Promise<AccountInfo> {
     const url = `${this.apiUrl}?username=${encodeURIComponent(this.username)}&password=${encodeURIComponent(this.password)}`;
-    return this.fetchJson<XtreamAuthResponse>(
+    const raw = await this.fetchJson<XtreamAuthResponse>(
       url,
       this.defaultHeaders(),
-    ) as Promise<AuthResponse>;
+    );
+    return adaptAuthResponse(raw);
   }
 
   async getCategories(type: ContentType): Promise<CatalogCategory[]> {
@@ -150,11 +152,6 @@ export class XtreamProvider extends BaseStreamProvider {
     }
   }
 
-  getStreamURL(streamId: string, type: "live" | "vod"): string {
-    const ext = type === "live" ? "ts" : "mp4";
-    return `${this.baseUrl}/${type}/${this.username}/${this.password}/${streamId}.${ext}`;
-  }
-
   async getSeriesInfo(seriesId: string): Promise<CatalogItemDetail> {
     const cacheKey = `${this.name}:series_info:${seriesId}`;
     const url = this.buildApiUrl("get_series_info", { series_id: seriesId });
@@ -179,7 +176,7 @@ export class XtreamProvider extends BaseStreamProvider {
     return adaptVODInfo(raw);
   }
 
-  async getEPG(streamId: string): Promise<NormalizedEPGEntry[]> {
+  async getEPG(streamId: string): Promise<EPGEntry[]> {
     const cacheKey = `${this.name}:epg:${streamId}`;
 
     const cached = cacheGet<{ epg_listings: XtreamEPGItem[] }>(cacheKey);
@@ -199,7 +196,7 @@ export class XtreamProvider extends BaseStreamProvider {
     return data.epg_listings.map(adaptEPGItem);
   }
 
-  async getFullEPG(): Promise<NormalizedEPGEntry[]> {
+  async getFullEPG(): Promise<EPGEntry[]> {
     const cacheKey = `${this.name}:epg:full`;
 
     const cached = cacheGet<{ epg_listings: XtreamEPGItem[] }>(cacheKey);
@@ -217,25 +214,6 @@ export class XtreamProvider extends BaseStreamProvider {
     );
     cacheSet(cacheKey, data, CacheTTL.EPG_FULL);
     return data.epg_listings.map(adaptEPGItem);
-  }
-
-  getStreamProxyInfo(streamId: string, type: ContentType): StreamProxyInfo {
-    const formatMap: Record<ContentType, { path: string; ext: string }> = {
-      live: { path: "live", ext: "ts" },
-      vod: { path: "movie", ext: "mp4" },
-      series: { path: "series", ext: "mp4" },
-    };
-
-    const { path, ext } = formatMap[type];
-    const url = `${this.baseUrl}/${path}/${this.username}/${this.password}/${streamId}.${ext}`;
-
-    return {
-      url,
-      format: ext,
-      headers: this.defaultHeaders(),
-      baseUrl: `${this.baseUrl}/live/${this.username}/${this.password}/`,
-      allowedHost: { hostname: this.host, port: String(this.port) },
-    };
   }
 
   getSegmentProxyInfo(segmentPath: string): StreamProxyInfo {

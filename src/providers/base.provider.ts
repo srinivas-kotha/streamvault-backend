@@ -5,7 +5,7 @@ import type {
   CatalogCategory,
   CatalogItem,
   CatalogItemDetail,
-  NormalizedEPGEntry,
+  EPGEntry,
   StreamProxyInfo,
   StreamInfo,
 } from "./provider.types";
@@ -99,13 +99,8 @@ export abstract class BaseStreamProvider implements IStreamProvider {
   ): Promise<CatalogItem[]>;
   abstract getVODInfo(vodId: string): Promise<CatalogItemDetail>;
   abstract getSeriesInfo(seriesId: string): Promise<CatalogItemDetail>;
-  abstract getEPG(streamId: string): Promise<NormalizedEPGEntry[]>;
-  abstract getFullEPG(): Promise<NormalizedEPGEntry[]>;
-  abstract getStreamURL(streamId: string, type: "live" | "vod"): string;
-  abstract getStreamProxyInfo(
-    streamId: string,
-    type: ContentType,
-  ): StreamProxyInfo;
+  abstract getEPG(streamId: string): Promise<EPGEntry[]>;
+  abstract getFullEPG(): Promise<EPGEntry[]>;
   abstract getSegmentProxyInfo(segmentPath: string): StreamProxyInfo;
   abstract getStreamInfo(
     itemId: string,

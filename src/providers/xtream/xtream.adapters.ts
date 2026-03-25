@@ -13,7 +13,7 @@ import type {
 import type {
   CatalogItem,
   CatalogItemDetail,
-  NormalizedEPGEntry,
+  EPGEntry,
   CatalogCategory,
   AccountInfo,
   ContentType,
@@ -136,7 +136,7 @@ export function adaptSeriesInfo(
   };
 }
 
-export function adaptEPGItem(raw: XtreamEPGItem): NormalizedEPGEntry {
+export function adaptEPGItem(raw: XtreamEPGItem): EPGEntry {
   // TODO(PR-2): Convert to proper ISO 8601 when EPG normalization is wired up
   // Xtream sends "YYYY-MM-DD HH:MM:SS" format, not true ISO 8601
   return {
