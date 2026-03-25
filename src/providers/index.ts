@@ -1,15 +1,15 @@
-export { initProvider, getProvider } from './factory';
+export { initProvider, getProvider } from "./factory";
 export type {
   IStreamProvider,
   ContentType,
-  Category,
-  Channel,
-  VODItem,
-  VODInfo,
-  SeriesItem,
-  SeriesInfo,
-  EPGEntry,
-  StreamURL,
   StreamProxyInfo,
-  AuthResponse,
-} from './provider.types';
+  CatalogCategory,
+  CatalogItem,
+  CatalogItemDetail,
+  SeasonInfo,
+  EpisodeInfo,
+  StreamInfo,
+  EPGEntry,
+  AccountInfo,
+  CatchupInfo,
+} from "./provider.types";

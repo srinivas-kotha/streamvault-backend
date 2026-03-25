@@ -13,10 +13,11 @@ src/providers/
 ├── provider.test.ts            # Tests
 └── xtream/                     # Reference implementation
     ├── xtream.provider.ts      # XtreamProvider extends BaseStreamProvider
-    └── xtream.types.ts         # Raw Xtream API response types (internal)
+    ├── xtream.types.ts         # Raw Xtream API response types (internal)
+    └── xtream.adapters.ts      # Pure adapter functions: raw → normalized types
 ```
 
-**Key principle:** Routers never import provider-specific code. They call `getProvider()` and use generic types (`Category`, `Channel`, `VODItem`, etc.).
+**Key principle:** Routers never import provider-specific code. They call `getProvider()` and use generic types (`CatalogCategory`, `CatalogItem`, `CatalogItemDetail`, `EPGEntry`, etc.).
 
 ---
 
@@ -53,26 +54,24 @@ For providers with simple responses (like M3U playlists), you might not need a s
 Create `src/providers/m3u/m3u.provider.ts`:
 
 ```typescript
-import { BaseStreamProvider } from '../base.provider';
+import { BaseStreamProvider } from "../base.provider";
 import type {
   ContentType,
-  Category,
-  Channel,
-  VODItem,
-  SeriesItem,
-  SeriesInfo,
-  VODInfo,
+  CatalogCategory,
+  CatalogItem,
+  CatalogItemDetail,
   EPGEntry,
   StreamProxyInfo,
-} from '../provider.types';
+  StreamInfo,
+} from "../provider.types";
 
 interface M3UConfig {
-  url: string;           // URL to the M3U playlist
-  epgUrl?: string;       // Optional XMLTV EPG URL
+  url: string; // URL to the M3U playlist
+  epgUrl?: string; // Optional XMLTV EPG URL
 }
 
 export class M3UProvider extends BaseStreamProvider {
-  readonly name = 'm3u';
+  readonly name = "m3u";
   private readonly playlistUrl: string;
   private readonly epgUrl: string | undefined;
 
@@ -84,72 +83,84 @@ export class M3UProvider extends BaseStreamProvider {
 
   // --- Required: Content Browsing ---
 
-  async getCategories(type: ContentType): Promise<Category[]> {
+  async getCategories(type: ContentType): Promise<CatalogCategory[]> {
     // Parse M3U playlist, extract unique group-title values
-    // Map each group to a Category { category_id, category_name, parent_id }
+    // Map each group to a CatalogCategory { id, name, parentId, type }
     // Use this.cachedFetch() for caching
-    throw new Error('Not implemented');
+    throw new Error("Not implemented");
   }
 
-  async getStreams(categoryId: string, type: ContentType): Promise<(Channel | VODItem | SeriesItem)[]> {
+  async getStreams(
+    categoryId: string,
+    type: ContentType,
+  ): Promise<CatalogItem[]> {
     // Filter parsed M3U entries by group-title matching categoryId
-    // Map each entry to Channel/VODItem/SeriesItem
-    throw new Error('Not implemented');
+    // Map each entry to CatalogItem { id, name, type, categoryId, icon, added, isAdult }
+    throw new Error("Not implemented");
   }
 
-  async getVODInfo(vodId: string): Promise<VODInfo> {
-    // M3U doesn't have detailed VOD info — return minimal info
+  async getVODInfo(vodId: string): Promise<CatalogItemDetail> {
+    // M3U doesn't have detailed VOD info — return minimal CatalogItemDetail
     // or fetch from TMDB if you have an API key
-    throw new Error('Not implemented');
+    throw new Error("Not implemented");
   }
 
-  async getSeriesInfo(seriesId: string): Promise<SeriesInfo> {
+  async getSeriesInfo(seriesId: string): Promise<CatalogItemDetail> {
     // M3U doesn't natively support series — return minimal info
-    throw new Error('Not implemented');
+    throw new Error("Not implemented");
   }
 
   // --- Required: EPG ---
 
   async getEPG(streamId: string): Promise<EPGEntry[]> {
     // Parse XMLTV from this.epgUrl, filter by channel ID
-    // Map to EPGEntry { id, epg_id, title, start, end, description, ... }
-    throw new Error('Not implemented');
+    // Map to EPGEntry { id, channelId, title, start, end, description }
+    throw new Error("Not implemented");
   }
 
   async getFullEPG(): Promise<EPGEntry[]> {
     // Parse full XMLTV, return all entries
-    throw new Error('Not implemented');
+    throw new Error("Not implemented");
   }
 
   // --- Required: Streaming ---
 
-  getStreamURL(streamId: string, type: 'live' | 'vod'): string {
-    // Return the direct stream URL from parsed M3U entries
-    // Look up by streamId in your parsed data
-    throw new Error('Not implemented');
+  getSegmentProxyInfo(segmentPath: string): StreamProxyInfo {
+    // For HLS segment proxying — build full segment URL from base + segmentPath
+    throw new Error("Not implemented");
   }
 
-  getStreamProxyInfo(streamId: string, type: ContentType): StreamProxyInfo {
-    // This is what stream.router.ts uses to proxy the stream
-    const url = this.getStreamURL(streamId, type === 'series' ? 'vod' : type);
+  getStreamInfo(
+    itemId: string,
+    type: ContentType,
+    extension?: string,
+  ): StreamInfo {
+    // Return StreamInfo for the stream router to proxy
+    // { url, format, headers, allowedHosts }
+    const url = this.getStreamUrlForItem(itemId, type, extension);
     const parsed = new URL(url);
 
     return {
       url,
-      format: type === 'live' ? 'ts' : 'mp4',
-      headers: {},                              // Add any auth headers your provider needs
-      baseUrl: `${parsed.origin}/`,             // For M3U8 rewriting
-      allowedHost: {                            // For SSRF protection
-        hostname: parsed.hostname,
-        port: parsed.port || '80',
-      },
+      format: (extension ??
+        (type === "live" ? "ts" : "mp4")) as StreamInfo["format"],
+      headers: {},
+      allowedHosts: [
+        {
+          hostname: parsed.hostname,
+          port: parsed.port || "80",
+        },
+      ],
     };
   }
 
-  getSegmentProxyInfo(segmentPath: string): StreamProxyInfo {
-    // For HLS segment proxying
-    // Build the full segment URL from the base + segmentPath
-    throw new Error('Not implemented');
+  private getStreamUrlForItem(
+    itemId: string,
+    type: ContentType,
+    ext?: string,
+  ): string {
+    // Look up the stream URL from parsed M3U entries
+    throw new Error("Not implemented");
   }
 }
 ```
@@ -173,13 +184,13 @@ Edit `src/config.ts` — add the provider's config:
 
 ```typescript
 export const config = {
-  providerType: optionalEnv('PROVIDER_TYPE', 'xtream') as 'xtream' | 'm3u',
+  providerType: optionalEnv("PROVIDER_TYPE", "xtream") as "xtream" | "m3u",
 
   // ... existing xtream block ...
 
   m3u: {
-    url: optionalEnv('M3U_URL', ''),
-    epgUrl: optionalEnv('M3U_EPG_URL', ''),
+    url: optionalEnv("M3U_URL", ""),
+    epgUrl: optionalEnv("M3U_EPG_URL", ""),
   },
 };
 ```
@@ -199,18 +210,18 @@ M3U_EPG_URL=http://your-provider.com/epg.xml
 Add tests to `src/providers/provider.test.ts` or create `src/providers/m3u/m3u.test.ts`:
 
 ```typescript
-describe('M3UProvider', () => {
+describe("M3UProvider", () => {
   it('has name "m3u"', () => {
-    const provider = new M3UProvider({ url: 'http://test.com/playlist.m3u' });
-    expect(provider.name).toBe('m3u');
+    const provider = new M3UProvider({ url: "http://test.com/playlist.m3u" });
+    expect(provider.name).toBe("m3u");
   });
 
-  it('starts healthy', () => {
-    const provider = new M3UProvider({ url: 'http://test.com/playlist.m3u' });
+  it("starts healthy", () => {
+    const provider = new M3UProvider({ url: "http://test.com/playlist.m3u" });
     expect(provider.isHealthy()).toBe(true);
   });
 
-  // Test getStreamProxyInfo, getSegmentProxyInfo, etc.
+  // Test getStreamInfo, getSegmentProxyInfo, etc.
 });
 ```
 
@@ -218,7 +229,7 @@ describe('M3UProvider', () => {
 
 ```bash
 # Type check
-npm run type-check
+npm run build
 
 # Run tests
 npm test
@@ -237,89 +248,99 @@ curl http://localhost:3001/api/live/categories
 
 Every provider must implement these methods:
 
-| Method | Returns | Purpose |
-|--------|---------|---------|
-| `getCategories(type)` | `Promise<Category[]>` | List categories for live/vod/series |
-| `getStreams(catId, type)` | `Promise<(Channel\|VODItem\|SeriesItem)[]>` | List content in a category |
-| `getVODInfo(vodId)` | `Promise<VODInfo>` | Movie details (poster, plot, cast) |
-| `getSeriesInfo(seriesId)` | `Promise<SeriesInfo>` | Series details + season/episode list |
-| `getEPG(streamId)` | `Promise<EPGEntry[]>` | Now/next EPG for a channel |
-| `getFullEPG()` | `Promise<EPGEntry[]>` | Full EPG for all channels |
-| `getStreamURL(id, type)` | `string` | Direct stream URL |
-| `getStreamProxyInfo(id, type)` | `StreamProxyInfo` | Everything needed to proxy a stream |
-| `getSegmentProxyInfo(path)` | `StreamProxyInfo` | HLS segment proxy info |
-| `isHealthy()` | `boolean` | Provider health status (inherited from base) |
-| `authenticate?()` | `Promise<AuthResponse>` | Optional — not all providers need auth |
+| Method                          | Returns                      | Purpose                                      |
+| ------------------------------- | ---------------------------- | -------------------------------------------- |
+| `getCategories(type)`           | `Promise<CatalogCategory[]>` | List categories for live/vod/series          |
+| `getStreams(catId, type)`       | `Promise<CatalogItem[]>`     | List content in a category                   |
+| `getVODInfo(vodId)`             | `Promise<CatalogItemDetail>` | Movie details (poster, plot, cast)           |
+| `getSeriesInfo(seriesId)`       | `Promise<CatalogItemDetail>` | Series details + season/episode list         |
+| `getEPG(streamId)`              | `Promise<EPGEntry[]>`        | Now/next EPG for a channel                   |
+| `getFullEPG()`                  | `Promise<EPGEntry[]>`        | Full EPG for all channels                    |
+| `getSegmentProxyInfo(path)`     | `StreamProxyInfo`            | HLS segment proxy info                       |
+| `getStreamInfo(id, type, ext?)` | `StreamInfo`                 | Stream URL + format + SSRF allowlist         |
+| `isHealthy()`                   | `boolean`                    | Provider health status (inherited from base) |
+| `authenticate?()`               | `Promise<AccountInfo>`       | Optional — not all providers need auth       |
 
 ## Generic Domain Types
 
 These are the types routers use. Your provider must map its raw API responses to these shapes:
 
 ```typescript
-Category    { category_id, category_name, parent_id }
-Channel     { stream_id, name, stream_icon, epg_channel_id, category_id, ... }
-VODItem     { stream_id, name, stream_icon, rating, category_id, container_extension, ... }
-SeriesItem  { series_id, name, cover, plot, cast, genre, category_id, ... }
-VODInfo     { info: { movie_image, name, plot, cast, ... }, movie_data: { stream_id, ... } }
-SeriesInfo  { seasons: [...], info: {...}, episodes: { "1": [...], "2": [...] } }
-EPGEntry    { id, epg_id, title, start, end, description, channel_id, ... }
+// Category list
+CatalogCategory  { id, name, parentId, type }
+
+// Content list items (live channels, VOD movies, series)
+CatalogItem      { id, name, type, categoryId, icon, added, isAdult, rating?, genre?, year? }
+
+// Detailed content info (VOD movie detail, series with episodes)
+CatalogItemDetail extends CatalogItem {
+  plot?, cast?, director?, duration?, durationSecs?,
+  containerExtension?, backdropUrl?, tmdbId?,
+  seasons?, episodes?
+}
+
+// EPG programme entry
+EPGEntry         { id, channelId, title, description, start, end, category?, icon? }
+
+// Stream info for proxying
+StreamInfo       { url, format, headers, allowedHosts, qualities? }
+
+// Auth / account info (optional)
+AccountInfo      { username?, maxConnections?, activeConnections?, expiryDate?, isTrial?, status?, allowedFormats? }
 ```
 
 Full type definitions: `src/providers/provider.types.ts`
 
-## StreamProxyInfo — The Key Abstraction
+## StreamProxyInfo — HLS Segment Proxy Abstraction
 
-This is what makes stream proxying provider-agnostic:
+Used exclusively by the HLS segment proxy (`GET /api/stream/live/segment/*`):
 
 ```typescript
 interface StreamProxyInfo {
-  url: string;                              // Full upstream URL to fetch
-  format: string;                           // 'ts', 'mp4', 'm3u8'
-  headers: Record<string, string>;          // Headers to send upstream (auth, user-agent)
-  baseUrl: string;                          // For M3U8 rewriting (strip this prefix)
-  allowedHost: { hostname, port };          // SSRF protection (only allow this host)
+  url: string; // Full upstream segment URL to fetch
+  format: string; // 'ts' or 'm3u8'
+  headers: Record<string, string>; // Headers to send upstream (auth, user-agent)
+  baseUrl: string; // For M3U8 rewriting (strip this prefix from absolute URLs)
+  allowedHost: { hostname; port }; // SSRF protection (only allow this host)
 }
 ```
 
-The stream router uses this to:
-1. Fetch the upstream URL with the provided headers
-2. Validate the URL against `allowedHost` (SSRF protection)
-3. Rewrite M3U8 playlists using `baseUrl` as the prefix to strip
-4. Determine stream format for FFmpeg transcoding vs binary passthrough
+For regular stream playback (live/VOD/series), implement `getStreamInfo()` which returns `StreamInfo` with `allowedHosts` (array, for SSRF protection).
 
 ## BaseStreamProvider — What You Get for Free
 
 By extending `BaseStreamProvider`, your provider inherits:
 
-| Feature | Method | Behavior |
-|---------|--------|----------|
-| **Fetch with timeout** | `fetchJson<T>(url, headers?)` | 10s timeout via AbortController |
-| **Health tracking** | `isHealthy()` | Auto-tracks consecutive failures |
-| **Exponential backoff** | `getBackoffMs()` | 0ms → 1s → 2s → 4s → ... → 60s max |
-| **Cache-aside** | `cachedFetch<T>(key, ttl, url, headers?)` | Check cache → wait backoff → fetch → cache |
+| Feature                 | Method                                    | Behavior                                   |
+| ----------------------- | ----------------------------------------- | ------------------------------------------ |
+| **Fetch with timeout**  | `fetchJson<T>(url, headers?)`             | 10s timeout via AbortController            |
+| **Health tracking**     | `isHealthy()`                             | Auto-tracks consecutive failures           |
+| **Exponential backoff** | `getBackoffMs()`                          | 0ms → 1s → 2s → 4s → ... → 60s max         |
+| **Cache-aside**         | `cachedFetch<T>(key, ttl, url, headers?)` | Check cache → wait backoff → fetch → cache |
 
 You don't need to implement health tracking or caching yourself — just call `this.cachedFetch()` or `this.fetchJson()` in your methods.
 
 ## Provider Examples by Type
 
-| Provider Type | Auth Method | Stream Format | EPG Source | Complexity |
-|---------------|-------------|---------------|------------|------------|
-| **Xtream Codes** | Username/password in URL | MPEG-TS (live), MP4 (VOD) | Built-in API | Medium |
-| **M3U/M3U8** | URL or header token | Varies (HLS, TS, MP4) | Separate XMLTV | Low-Medium |
-| **Plex** | X-Plex-Token header | HLS | Plex EPG API | Medium |
-| **Emby** | API key header | HLS, MP4 | Emby guide API | Medium |
-| **Stalker Portal** | MAC address + token | MPEG-TS | Portal EPG | High |
+| Provider Type      | Auth Method              | Stream Format             | EPG Source     | Complexity |
+| ------------------ | ------------------------ | ------------------------- | -------------- | ---------- |
+| **Xtream Codes**   | Username/password in URL | MPEG-TS (live), MP4 (VOD) | Built-in API   | Medium     |
+| **M3U/M3U8**       | URL or header token      | Varies (HLS, TS, MP4)     | Separate XMLTV | Low-Medium |
+| **Plex**           | X-Plex-Token header      | HLS                       | Plex EPG API   | Medium     |
+| **Emby**           | API key header           | HLS, MP4                  | Emby guide API | Medium     |
+| **Stalker Portal** | MAC address + token      | MPEG-TS                   | Portal EPG     | High       |
 
 ## Checklist
 
 - [ ] Created `src/providers/<name>/` folder
 - [ ] Provider class extends `BaseStreamProvider`
 - [ ] All `IStreamProvider` methods implemented
-- [ ] `getStreamProxyInfo()` returns correct SSRF validation data
+- [ ] `getStreamInfo()` returns correct SSRF validation data (`allowedHosts`)
+- [ ] `getSegmentProxyInfo()` returns correct `allowedHost` for segment proxy
 - [ ] Registered in `src/providers/factory.ts`
 - [ ] Config block added to `src/config.ts`
 - [ ] Environment variables documented in `.env.example`
 - [ ] Tests written and passing
-- [ ] `npm run type-check` passes
+- [ ] `npm run build` passes
 - [ ] `npm test` passes
 - [ ] Manual E2E test: categories → streams → stream playback

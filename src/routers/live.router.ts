@@ -1,7 +1,7 @@
 import { Router, Request, Response } from "express";
 import { authMiddleware } from "../middleware/auth";
 import { getProvider } from "../providers";
-import type { Category, Channel } from "../providers";
+import type { CatalogCategory, CatalogItem } from "../providers";
 import {
   categoryIdSchema,
   streamIdSchema,
@@ -62,35 +62,32 @@ router.get(
   async (_req: Request, res: Response) => {
     try {
       const cacheKey = "xtream:live:featured";
-      const cached = cacheGet<Channel[]>(cacheKey);
+      const cached = cacheGet<CatalogItem[]>(cacheKey);
       if (cached) {
         res.json(cached);
         return;
       }
 
       // 1. Fetch all live categories
-      const categories: Category[] = await getProvider().getCategories("live");
+      const categories: CatalogCategory[] =
+        await getProvider().getCategories("live");
 
       // 2. Filter to Telugu/Indian categories
-      const teluguCats = categories.filter((cat) =>
-        isTeluguCategory(cat.category_name),
-      );
+      const teluguCats = categories.filter((cat) => isTeluguCategory(cat.name));
 
       // 3. Fetch streams from each Telugu category in parallel
       const streamResults = await Promise.allSettled(
-        teluguCats.map((cat) =>
-          getProvider().getStreams(cat.category_id, "live"),
-        ),
+        teluguCats.map((cat) => getProvider().getStreams(cat.id, "live")),
       );
 
       // 4. Flatten and deduplicate
-      const allStreams: Channel[] = [];
-      const seen = new Set<number>();
+      const allStreams: CatalogItem[] = [];
+      const seen = new Set<string>();
       for (const result of streamResults) {
         if (result.status === "fulfilled") {
-          for (const stream of result.value as Channel[]) {
-            if (!seen.has(stream.stream_id)) {
-              seen.add(stream.stream_id);
+          for (const stream of result.value) {
+            if (!seen.has(stream.id)) {
+              seen.add(stream.id);
               allStreams.push(stream);
             }
           }
