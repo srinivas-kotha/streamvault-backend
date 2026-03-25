@@ -1,29 +1,49 @@
-import { Router, Request, Response } from 'express';
-import { authMiddleware } from '../middleware/auth';
-import { getProvider } from '../providers';
-import type { Category, Channel } from '../providers';
-import { categoryIdSchema, streamIdSchema } from '../utils/validators';
-import { cacheGet, cacheSet, CacheTTL } from '../services/cache.service';
+import { Router, Request, Response } from "express";
+import { authMiddleware } from "../middleware/auth";
+import { getProvider } from "../providers";
+import type { Category, Channel } from "../providers";
+import {
+  categoryIdSchema,
+  streamIdSchema,
+  bulkEpgQuerySchema,
+} from "../utils/validators";
+import { cacheGet, cacheSet, CacheTTL } from "../services/cache.service";
 
 const router = Router();
 
 // Priority channel patterns — matched case-insensitively against stream names
 const PRIORITY_PATTERNS = [
-  'etv telugu', 'etv hd', 'etv',
-  'maa tv', 'maa hd', 'star maa', 'maa gold', 'maa movies',
-  'gemini tv', 'gemini hd', 'gemini movies', 'gemini',
-  'zee telugu', 'zee telugu hd',
+  "etv telugu",
+  "etv hd",
+  "etv",
+  "maa tv",
+  "maa hd",
+  "star maa",
+  "maa gold",
+  "maa movies",
+  "gemini tv",
+  "gemini hd",
+  "gemini movies",
+  "gemini",
+  "zee telugu",
+  "zee telugu hd",
 ];
 
 // Category name patterns that likely contain Telugu live channels
 const TELUGU_CATEGORY_PATTERNS = [
-  'telugu', 'india entertainment', 'indian', 'india',
+  "telugu",
+  "india entertainment",
+  "indian",
+  "india",
 ];
 
 function matchesPriority(name: string): number {
   const lower = name.toLowerCase().trim();
   for (let i = 0; i < PRIORITY_PATTERNS.length; i++) {
-    if (lower === PRIORITY_PATTERNS[i] || lower.includes(PRIORITY_PATTERNS[i]!)) {
+    if (
+      lower === PRIORITY_PATTERNS[i] ||
+      lower.includes(PRIORITY_PATTERNS[i]!)
+    ) {
       return i;
     }
   }
@@ -36,102 +56,187 @@ function isTeluguCategory(catName: string): boolean {
 }
 
 // GET /api/live/featured — priority channels
-router.get('/featured', authMiddleware, async (_req: Request, res: Response) => {
-  try {
-    const cacheKey = 'xtream:live:featured';
-    const cached = cacheGet<Channel[]>(cacheKey);
-    if (cached) {
-      res.json(cached);
-      return;
-    }
+router.get(
+  "/featured",
+  authMiddleware,
+  async (_req: Request, res: Response) => {
+    try {
+      const cacheKey = "xtream:live:featured";
+      const cached = cacheGet<Channel[]>(cacheKey);
+      if (cached) {
+        res.json(cached);
+        return;
+      }
 
-    // 1. Fetch all live categories
-    const categories: Category[] = await getProvider().getCategories('live');
+      // 1. Fetch all live categories
+      const categories: Category[] = await getProvider().getCategories("live");
 
-    // 2. Filter to Telugu/Indian categories
-    const teluguCats = categories.filter((cat) => isTeluguCategory(cat.category_name));
+      // 2. Filter to Telugu/Indian categories
+      const teluguCats = categories.filter((cat) =>
+        isTeluguCategory(cat.category_name),
+      );
 
-    // 3. Fetch streams from each Telugu category in parallel
-    const streamResults = await Promise.allSettled(
-      teluguCats.map((cat) => getProvider().getStreams(cat.category_id, 'live')),
-    );
+      // 3. Fetch streams from each Telugu category in parallel
+      const streamResults = await Promise.allSettled(
+        teluguCats.map((cat) =>
+          getProvider().getStreams(cat.category_id, "live"),
+        ),
+      );
 
-    // 4. Flatten and deduplicate
-    const allStreams: Channel[] = [];
-    const seen = new Set<number>();
-    for (const result of streamResults) {
-      if (result.status === 'fulfilled') {
-        for (const stream of result.value as Channel[]) {
-          if (!seen.has(stream.stream_id)) {
-            seen.add(stream.stream_id);
-            allStreams.push(stream);
+      // 4. Flatten and deduplicate
+      const allStreams: Channel[] = [];
+      const seen = new Set<number>();
+      for (const result of streamResults) {
+        if (result.status === "fulfilled") {
+          for (const stream of result.value as Channel[]) {
+            if (!seen.has(stream.stream_id)) {
+              seen.add(stream.stream_id);
+              allStreams.push(stream);
+            }
           }
         }
       }
+
+      // 5. Filter to priority channels and sort by priority order
+      const priorityStreams = allStreams
+        .map((s) => ({ stream: s, rank: matchesPriority(s.name) }))
+        .filter((entry) => entry.rank >= 0)
+        .sort((a, b) => a.rank - b.rank)
+        .map((entry) => entry.stream);
+
+      // Take top 20 priority channels
+      const featured = priorityStreams.slice(0, 20);
+
+      cacheSet(cacheKey, featured, CacheTTL.CHANNEL_LIST);
+      res.json(featured);
+    } catch (err) {
+      console.error(
+        "[live] Failed to fetch featured channels:",
+        err instanceof Error ? err.message : err,
+      );
+      res.status(502).json({
+        error: "Bad Gateway",
+        message: "Failed to fetch featured channels",
+      });
     }
-
-    // 5. Filter to priority channels and sort by priority order
-    const priorityStreams = allStreams
-      .map((s) => ({ stream: s, rank: matchesPriority(s.name) }))
-      .filter((entry) => entry.rank >= 0)
-      .sort((a, b) => a.rank - b.rank)
-      .map((entry) => entry.stream);
-
-    // Take top 20 priority channels
-    const featured = priorityStreams.slice(0, 20);
-
-    cacheSet(cacheKey, featured, CacheTTL.CHANNEL_LIST);
-    res.json(featured);
-  } catch (err) {
-    console.error('[live] Failed to fetch featured channels:', err instanceof Error ? err.message : err);
-    res.status(502).json({ error: 'Bad Gateway', message: 'Failed to fetch featured channels' });
-  }
-});
+  },
+);
 
 // GET /api/live/categories
-router.get('/categories', authMiddleware, async (_req: Request, res: Response) => {
-  try {
-    const categories = await getProvider().getCategories('live');
-    res.json(categories);
-  } catch (err) {
-    console.error('[live] Failed to fetch categories:', err instanceof Error ? err.message : err);
-    res.status(502).json({ error: 'Bad Gateway', message: 'Failed to fetch live categories' });
-  }
-});
+router.get(
+  "/categories",
+  authMiddleware,
+  async (_req: Request, res: Response) => {
+    try {
+      const categories = await getProvider().getCategories("live");
+      res.json(categories);
+    } catch (err) {
+      console.error(
+        "[live] Failed to fetch categories:",
+        err instanceof Error ? err.message : err,
+      );
+      res.status(502).json({
+        error: "Bad Gateway",
+        message: "Failed to fetch live categories",
+      });
+    }
+  },
+);
 
 // GET /api/live/streams/:catId
-router.get('/streams/:catId', authMiddleware, async (req: Request, res: Response) => {
+router.get(
+  "/streams/:catId",
+  authMiddleware,
+  async (req: Request, res: Response) => {
+    try {
+      const parsed = categoryIdSchema.safeParse(req.params);
+      if (!parsed.success) {
+        res
+          .status(400)
+          .json({ error: "Bad Request", message: "Invalid category ID" });
+        return;
+      }
+
+      const streams = await getProvider().getStreams(parsed.data.catId, "live");
+      res.json(streams);
+    } catch (err) {
+      console.error(
+        "[live] Failed to fetch streams:",
+        err instanceof Error ? err.message : err,
+      );
+      res.status(502).json({
+        error: "Bad Gateway",
+        message: "Failed to fetch live streams",
+      });
+    }
+  },
+);
+
+// GET /api/live/epg/bulk?streamIds=1,2,3
+// Must be defined BEFORE /epg/:streamId so Express doesn't treat "bulk" as a streamId
+router.get("/epg/bulk", authMiddleware, async (req: Request, res: Response) => {
   try {
-    const parsed = categoryIdSchema.safeParse(req.params);
+    const parsed = bulkEpgQuerySchema.safeParse(req.query);
     if (!parsed.success) {
-      res.status(400).json({ error: 'Bad Request', message: 'Invalid category ID' });
+      const message =
+        parsed.error.errors[0]?.message ?? "Invalid streamIds parameter";
+      res.status(400).json({ error: "Bad Request", message });
       return;
     }
 
-    const streams = await getProvider().getStreams(parsed.data.catId, 'live');
-    res.json(streams);
+    const { streamIds } = parsed.data;
+    const results = await Promise.all(
+      streamIds.map((id) =>
+        getProvider()
+          .getEPG(id)
+          .then((entries) => ({ id, entries })),
+      ),
+    );
+
+    const response: Record<string, unknown> = {};
+    for (const { id, entries } of results) {
+      response[id] = entries;
+    }
+
+    res.json(response);
   } catch (err) {
-    console.error('[live] Failed to fetch streams:', err instanceof Error ? err.message : err);
-    res.status(502).json({ error: 'Bad Gateway', message: 'Failed to fetch live streams' });
+    console.error(
+      "[live] Failed to fetch bulk EPG:",
+      err instanceof Error ? err.message : err,
+    );
+    res.status(502).json({
+      error: "Bad Gateway",
+      message: "Failed to fetch bulk EPG data",
+    });
   }
 });
 
 // GET /api/live/epg/:streamId
-router.get('/epg/:streamId', authMiddleware, async (req: Request, res: Response) => {
-  try {
-    const parsed = streamIdSchema.safeParse(req.params);
-    if (!parsed.success) {
-      res.status(400).json({ error: 'Bad Request', message: 'Invalid stream ID' });
-      return;
-    }
+router.get(
+  "/epg/:streamId",
+  authMiddleware,
+  async (req: Request, res: Response) => {
+    try {
+      const parsed = streamIdSchema.safeParse(req.params);
+      if (!parsed.success) {
+        res
+          .status(400)
+          .json({ error: "Bad Request", message: "Invalid stream ID" });
+        return;
+      }
 
-    const epg = await getProvider().getEPG(parsed.data.streamId);
-    res.json(epg);
-  } catch (err) {
-    console.error('[live] Failed to fetch EPG:', err instanceof Error ? err.message : err);
-    res.status(502).json({ error: 'Bad Gateway', message: 'Failed to fetch EPG data' });
-  }
-});
+      const epg = await getProvider().getEPG(parsed.data.streamId);
+      res.json(epg);
+    } catch (err) {
+      console.error(
+        "[live] Failed to fetch EPG:",
+        err instanceof Error ? err.message : err,
+      );
+      res
+        .status(502)
+        .json({ error: "Bad Gateway", message: "Failed to fetch EPG data" });
+    }
+  },
+);
 
 export default router;
-
