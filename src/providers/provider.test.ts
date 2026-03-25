@@ -1,18 +1,18 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { XtreamProvider } from './xtream/xtream.provider';
-import { cacheFlush } from '../services/cache.service';
-import type { IStreamProvider, ContentType } from './provider.types';
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { XtreamProvider } from "./xtream/xtream.provider";
+import { cacheFlush } from "../services/cache.service";
+import type { IStreamProvider, ContentType } from "./provider.types";
 
 // --- XtreamProvider unit tests ---
 
 const TEST_CONFIG = {
-  host: 'test.example.com',
+  host: "test.example.com",
   port: 8080,
-  username: 'testuser',
-  password: 'testpass',
+  username: "testuser",
+  password: "testpass",
 };
 
-describe('XtreamProvider', () => {
+describe("XtreamProvider", () => {
   let provider: XtreamProvider;
 
   beforeEach(() => {
@@ -20,110 +20,138 @@ describe('XtreamProvider', () => {
   });
 
   it('has name "xtream"', () => {
-    expect(provider.name).toBe('xtream');
+    expect(provider.name).toBe("xtream");
   });
 
-  it('starts healthy', () => {
+  it("starts healthy", () => {
     expect(provider.isHealthy()).toBe(true);
   });
 
-  describe('getStreamURL', () => {
-    it('builds live stream URL with .ts extension', () => {
-      const url = provider.getStreamURL('123', 'live');
-      expect(url).toBe('http://test.example.com:8080/live/testuser/testpass/123.ts');
+  describe("getStreamURL", () => {
+    it("builds live stream URL with .ts extension", () => {
+      const url = provider.getStreamURL("123", "live");
+      expect(url).toBe(
+        "http://test.example.com:8080/live/testuser/testpass/123.ts",
+      );
     });
 
-    it('builds VOD stream URL with .mp4 extension', () => {
-      const url = provider.getStreamURL('456', 'vod');
-      expect(url).toBe('http://test.example.com:8080/vod/testuser/testpass/456.mp4');
-    });
-  });
-
-  describe('getStreamProxyInfo', () => {
-    it('returns correct proxy info for live stream', () => {
-      const info = provider.getStreamProxyInfo('123', 'live');
-      expect(info.url).toBe('http://test.example.com:8080/live/testuser/testpass/123.ts');
-      expect(info.format).toBe('ts');
-      expect(info.headers['User-Agent']).toBe('IPTV Smarters Pro/2.2.2.1');
-      expect(info.baseUrl).toBe('http://test.example.com:8080/live/testuser/testpass/');
-      expect(info.allowedHost).toEqual({ hostname: 'test.example.com', port: '8080' });
-    });
-
-    it('returns correct proxy info for VOD stream', () => {
-      const info = provider.getStreamProxyInfo('456', 'vod');
-      expect(info.url).toBe('http://test.example.com:8080/movie/testuser/testpass/456.mp4');
-      expect(info.format).toBe('mp4');
-    });
-
-    it('returns correct proxy info for series stream', () => {
-      const info = provider.getStreamProxyInfo('789', 'series');
-      expect(info.url).toBe('http://test.example.com:8080/series/testuser/testpass/789.mp4');
-      expect(info.format).toBe('mp4');
+    it("builds VOD stream URL with .mp4 extension", () => {
+      const url = provider.getStreamURL("456", "vod");
+      expect(url).toBe(
+        "http://test.example.com:8080/vod/testuser/testpass/456.mp4",
+      );
     });
   });
 
-  describe('getSegmentProxyInfo', () => {
-    it('returns correct info for TS segment', () => {
-      const info = provider.getSegmentProxyInfo('stream123.ts');
-      expect(info.url).toBe('http://test.example.com:8080/live/testuser/testpass/stream123.ts');
-      expect(info.format).toBe('ts');
-      expect(info.allowedHost).toEqual({ hostname: 'test.example.com', port: '8080' });
+  describe("getStreamProxyInfo", () => {
+    it("returns correct proxy info for live stream", () => {
+      const info = provider.getStreamProxyInfo("123", "live");
+      expect(info.url).toBe(
+        "http://test.example.com:8080/live/testuser/testpass/123.ts",
+      );
+      expect(info.format).toBe("ts");
+      expect(info.headers["User-Agent"]).toBe("IPTV Smarters Pro/2.2.2.1");
+      expect(info.baseUrl).toBe(
+        "http://test.example.com:8080/live/testuser/testpass/",
+      );
+      expect(info.allowedHost).toEqual({
+        hostname: "test.example.com",
+        port: "8080",
+      });
     });
 
-    it('returns correct info for M3U8 segment', () => {
-      const info = provider.getSegmentProxyInfo('index.m3u8');
-      expect(info.url).toBe('http://test.example.com:8080/live/testuser/testpass/index.m3u8');
-      expect(info.format).toBe('m3u8');
+    it("returns correct proxy info for VOD stream", () => {
+      const info = provider.getStreamProxyInfo("456", "vod");
+      expect(info.url).toBe(
+        "http://test.example.com:8080/movie/testuser/testpass/456.mp4",
+      );
+      expect(info.format).toBe("mp4");
     });
 
-    it('includes base URL for M3U8 rewriting', () => {
-      const info = provider.getSegmentProxyInfo('sub/playlist.m3u8');
-      expect(info.baseUrl).toBe('http://test.example.com:8080/live/testuser/testpass/');
+    it("returns correct proxy info for series stream", () => {
+      const info = provider.getStreamProxyInfo("789", "series");
+      expect(info.url).toBe(
+        "http://test.example.com:8080/series/testuser/testpass/789.mp4",
+      );
+      expect(info.format).toBe("mp4");
+    });
+  });
+
+  describe("getSegmentProxyInfo", () => {
+    it("returns correct info for TS segment", () => {
+      const info = provider.getSegmentProxyInfo("stream123.ts");
+      expect(info.url).toBe(
+        "http://test.example.com:8080/live/testuser/testpass/stream123.ts",
+      );
+      expect(info.format).toBe("ts");
+      expect(info.allowedHost).toEqual({
+        hostname: "test.example.com",
+        port: "8080",
+      });
+    });
+
+    it("returns correct info for M3U8 segment", () => {
+      const info = provider.getSegmentProxyInfo("index.m3u8");
+      expect(info.url).toBe(
+        "http://test.example.com:8080/live/testuser/testpass/index.m3u8",
+      );
+      expect(info.format).toBe("m3u8");
+    });
+
+    it("includes base URL for M3U8 rewriting", () => {
+      const info = provider.getSegmentProxyInfo("sub/playlist.m3u8");
+      expect(info.baseUrl).toBe(
+        "http://test.example.com:8080/live/testuser/testpass/",
+      );
     });
   });
 });
 
 // --- Factory tests ---
 
-describe('Provider Factory', () => {
-  it('initProvider creates XtreamProvider with valid config', async () => {
+describe("Provider Factory", () => {
+  it("initProvider creates XtreamProvider with valid config", async () => {
     // We test the factory logic by directly constructing — avoids needing env vars
     const provider = new XtreamProvider(TEST_CONFIG);
-    expect(provider.name).toBe('xtream');
+    expect(provider.name).toBe("xtream");
     expect(provider.isHealthy()).toBe(true);
   });
 });
 
 // --- IStreamProvider interface compliance ---
 
-describe('IStreamProvider contract', () => {
-  it('XtreamProvider implements all required methods', () => {
+describe("IStreamProvider contract", () => {
+  it("XtreamProvider implements all required methods", () => {
     const provider: IStreamProvider = new XtreamProvider(TEST_CONFIG);
 
     // All interface methods exist
-    expect(typeof provider.getCategories).toBe('function');
-    expect(typeof provider.getStreams).toBe('function');
-    expect(typeof provider.getVODInfo).toBe('function');
-    expect(typeof provider.getSeriesInfo).toBe('function');
-    expect(typeof provider.getEPG).toBe('function');
-    expect(typeof provider.getFullEPG).toBe('function');
-    expect(typeof provider.getStreamURL).toBe('function');
-    expect(typeof provider.getStreamProxyInfo).toBe('function');
-    expect(typeof provider.getSegmentProxyInfo).toBe('function');
-    expect(typeof provider.isHealthy).toBe('function');
+    expect(typeof provider.getCategories).toBe("function");
+    expect(typeof provider.getStreams).toBe("function");
+    expect(typeof provider.getVODInfo).toBe("function");
+    expect(typeof provider.getSeriesInfo).toBe("function");
+    expect(typeof provider.getEPG).toBe("function");
+    expect(typeof provider.getFullEPG).toBe("function");
+    expect(typeof provider.getStreamURL).toBe("function");
+    expect(typeof provider.getStreamProxyInfo).toBe("function");
+    expect(typeof provider.getSegmentProxyInfo).toBe("function");
+    expect(typeof provider.isHealthy).toBe("function");
   });
 
-  it('XtreamProvider is assignable to IStreamProvider', () => {
+  it("XtreamProvider is assignable to IStreamProvider", () => {
     // TypeScript compile-time check: this line would fail to compile if
     // XtreamProvider doesn't satisfy IStreamProvider
     const provider: IStreamProvider = new XtreamProvider(TEST_CONFIG);
-    expect(provider.name).toBe('xtream');
+    expect(provider.name).toBe("xtream");
   });
 });
 
 // --- Fetch-level API tests ---
 
-function mockFetchResponse(data: unknown, ok = true, status = 200): ReturnType<typeof vi.fn> {
+function mockFetchResponse(
+  data: unknown,
+  ok = true,
+  status = 200,
+): ReturnType<typeof vi.fn> {
   return vi.fn().mockResolvedValue({
     ok,
     status,
@@ -131,7 +159,7 @@ function mockFetchResponse(data: unknown, ok = true, status = 200): ReturnType<t
   });
 }
 
-describe('XtreamProvider — getCategories()', () => {
+describe("XtreamProvider — getCategories()", () => {
   let provider: XtreamProvider;
 
   beforeEach(() => {
@@ -143,40 +171,51 @@ describe('XtreamProvider — getCategories()', () => {
     vi.unstubAllGlobals();
   });
 
-  it('returns categories from the API', async () => {
-    const categories = [
-      { category_id: '1', category_name: 'Sports', parent_id: 0 },
-      { category_id: '2', category_name: 'News', parent_id: 0 },
+  it("returns adapted CatalogCategory objects from the API", async () => {
+    const rawCategories = [
+      { category_id: "1", category_name: "Sports", parent_id: 0 },
+      { category_id: "2", category_name: "News", parent_id: 0 },
     ];
-    vi.stubGlobal('fetch', mockFetchResponse(categories));
+    vi.stubGlobal("fetch", mockFetchResponse(rawCategories));
 
-    const result = await provider.getCategories('live');
+    const result = await provider.getCategories("live");
 
-    expect(result).toEqual(categories);
+    expect(result).toEqual([
+      { id: "1", name: "Sports", parentId: null, type: "live" },
+      { id: "2", name: "News", parentId: null, type: "live" },
+    ]);
     expect(fetch).toHaveBeenCalledOnce();
-    const calledUrl = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
-    expect(calledUrl).toContain('action=get_live_categories');
+    const calledUrl = (fetch as ReturnType<typeof vi.fn>).mock
+      .calls[0][0] as string;
+    expect(calledUrl).toContain("action=get_live_categories");
   });
 
-  it('uses cache on second call (fetch called only once)', async () => {
-    const categories = [{ category_id: '1', category_name: 'Movies', parent_id: 0 }];
-    vi.stubGlobal('fetch', mockFetchResponse(categories));
+  it("uses cache on second call (fetch called only once)", async () => {
+    const categories = [
+      { category_id: "1", category_name: "Movies", parent_id: 0 },
+    ];
+    vi.stubGlobal("fetch", mockFetchResponse(categories));
 
-    await provider.getCategories('vod');
-    await provider.getCategories('vod');
+    await provider.getCategories("vod");
+    await provider.getCategories("vod");
 
     expect(fetch).toHaveBeenCalledOnce();
   });
 
-  it('becomes unhealthy after fetch error', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Network error')));
+  it("becomes unhealthy after fetch error", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new Error("Network error")),
+    );
 
-    await expect(provider.getCategories('live')).rejects.toThrow('Network error');
+    await expect(provider.getCategories("live")).rejects.toThrow(
+      "Network error",
+    );
     expect(provider.isHealthy()).toBe(false);
   });
 });
 
-describe('XtreamProvider — getStreams()', () => {
+describe("XtreamProvider — getStreams()", () => {
   let provider: XtreamProvider;
 
   beforeEach(() => {
@@ -188,39 +227,42 @@ describe('XtreamProvider — getStreams()', () => {
     vi.unstubAllGlobals();
   });
 
-  it('uses get_live_streams action for live type', async () => {
-    const streams = [{ stream_id: 1, name: 'Channel 1' }];
-    vi.stubGlobal('fetch', mockFetchResponse(streams));
+  it("uses get_live_streams action for live type", async () => {
+    const streams = [{ stream_id: 1, name: "Channel 1" }];
+    vi.stubGlobal("fetch", mockFetchResponse(streams));
 
-    await provider.getStreams('5', 'live');
+    await provider.getStreams("5", "live");
 
-    const calledUrl = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
-    expect(calledUrl).toContain('action=get_live_streams');
-    expect(calledUrl).toContain('category_id=5');
+    const calledUrl = (fetch as ReturnType<typeof vi.fn>).mock
+      .calls[0][0] as string;
+    expect(calledUrl).toContain("action=get_live_streams");
+    expect(calledUrl).toContain("category_id=5");
   });
 
-  it('uses get_vod_streams action for vod type', async () => {
-    vi.stubGlobal('fetch', mockFetchResponse([]));
+  it("uses get_vod_streams action for vod type", async () => {
+    vi.stubGlobal("fetch", mockFetchResponse([]));
 
-    await provider.getStreams('10', 'vod');
+    await provider.getStreams("10", "vod");
 
-    const calledUrl = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
-    expect(calledUrl).toContain('action=get_vod_streams');
-    expect(calledUrl).toContain('category_id=10');
+    const calledUrl = (fetch as ReturnType<typeof vi.fn>).mock
+      .calls[0][0] as string;
+    expect(calledUrl).toContain("action=get_vod_streams");
+    expect(calledUrl).toContain("category_id=10");
   });
 
-  it('uses get_series action for series type', async () => {
-    vi.stubGlobal('fetch', mockFetchResponse([]));
+  it("uses get_series action for series type", async () => {
+    vi.stubGlobal("fetch", mockFetchResponse([]));
 
-    await provider.getStreams('3', 'series');
+    await provider.getStreams("3", "series");
 
-    const calledUrl = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
-    expect(calledUrl).toContain('action=get_series');
-    expect(calledUrl).toContain('category_id=3');
+    const calledUrl = (fetch as ReturnType<typeof vi.fn>).mock
+      .calls[0][0] as string;
+    expect(calledUrl).toContain("action=get_series");
+    expect(calledUrl).toContain("category_id=3");
   });
 });
 
-describe('XtreamProvider — getEPG()', () => {
+describe("XtreamProvider — getEPG()", () => {
   let provider: XtreamProvider;
 
   beforeEach(() => {
@@ -232,32 +274,72 @@ describe('XtreamProvider — getEPG()', () => {
     vi.unstubAllGlobals();
   });
 
-  it('unwraps epg_listings from the API response', async () => {
-    const listings = [
-      { id: '1', title: 'Morning Show', start: '2026-01-01 08:00', end: '2026-01-01 09:00' },
-      { id: '2', title: 'Evening News', start: '2026-01-01 18:00', end: '2026-01-01 19:00' },
+  it("unwraps and adapts epg_listings from the API response", async () => {
+    const rawListings = [
+      {
+        id: "1",
+        epg_id: "ch1.us",
+        title: "Morning Show",
+        description: "A morning program",
+        lang: "en",
+        start: "2026-01-01 08:00:00",
+        end: "2026-01-01 09:00:00",
+        channel_id: "ch1",
+        start_timestamp: "1234",
+        stop_timestamp: "5678",
+      },
+      {
+        id: "2",
+        epg_id: "ch1.us",
+        title: "Evening News",
+        description: "Top stories",
+        lang: "en",
+        start: "2026-01-01 18:00:00",
+        end: "2026-01-01 19:00:00",
+        channel_id: "ch1",
+        start_timestamp: "2345",
+        stop_timestamp: "6789",
+      },
     ];
-    vi.stubGlobal('fetch', mockFetchResponse({ epg_listings: listings }));
+    vi.stubGlobal("fetch", mockFetchResponse({ epg_listings: rawListings }));
 
-    const result = await provider.getEPG('100');
+    const result = await provider.getEPG("100");
 
-    expect(result).toEqual(listings);
-    const calledUrl = (fetch as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
-    expect(calledUrl).toContain('action=get_short_epg');
-    expect(calledUrl).toContain('stream_id=100');
+    expect(result).toEqual([
+      {
+        id: "1",
+        channelId: "ch1.us",
+        title: "Morning Show",
+        description: "A morning program",
+        start: "2026-01-01 08:00:00",
+        end: "2026-01-01 09:00:00",
+      },
+      {
+        id: "2",
+        channelId: "ch1.us",
+        title: "Evening News",
+        description: "Top stories",
+        start: "2026-01-01 18:00:00",
+        end: "2026-01-01 19:00:00",
+      },
+    ]);
+    const calledUrl = (fetch as ReturnType<typeof vi.fn>).mock
+      .calls[0][0] as string;
+    expect(calledUrl).toContain("action=get_short_epg");
+    expect(calledUrl).toContain("stream_id=100");
   });
 
-  it('uses cache on second call', async () => {
-    vi.stubGlobal('fetch', mockFetchResponse({ epg_listings: [] }));
+  it("uses cache on second call", async () => {
+    vi.stubGlobal("fetch", mockFetchResponse({ epg_listings: [] }));
 
-    await provider.getEPG('100');
-    await provider.getEPG('100');
+    await provider.getEPG("100");
+    await provider.getEPG("100");
 
     expect(fetch).toHaveBeenCalledOnce();
   });
 });
 
-describe('XtreamProvider — health tracking', () => {
+describe("XtreamProvider — health tracking", () => {
   let provider: XtreamProvider;
 
   beforeEach(() => {
@@ -269,38 +351,43 @@ describe('XtreamProvider — health tracking', () => {
     vi.unstubAllGlobals();
   });
 
-  it('starts healthy', () => {
+  it("starts healthy", () => {
     expect(provider.isHealthy()).toBe(true);
   });
 
-  it('becomes unhealthy after a fetch failure', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('connection refused')));
+  it("becomes unhealthy after a fetch failure", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new Error("connection refused")),
+    );
 
-    await expect(provider.getCategories('live')).rejects.toThrow();
+    await expect(provider.getCategories("live")).rejects.toThrow();
     expect(provider.isHealthy()).toBe(false);
   });
 
-  it('recovers to healthy after a successful fetch', async () => {
+  it("recovers to healthy after a successful fetch", async () => {
     // First call fails
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('timeout')));
-    await expect(provider.getCategories('live')).rejects.toThrow();
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("timeout")));
+    await expect(provider.getCategories("live")).rejects.toThrow();
     expect(provider.isHealthy()).toBe(false);
 
     // Second call succeeds (different cache key to avoid cache hit)
     cacheFlush();
-    vi.stubGlobal('fetch', mockFetchResponse([]));
-    await provider.getCategories('vod');
+    vi.stubGlobal("fetch", mockFetchResponse([]));
+    await provider.getCategories("vod");
     expect(provider.isHealthy()).toBe(true);
   });
 });
 
-describe('XtreamProvider — backoff', () => {
-  it('calculates exponential backoff: 0ms, 1s, 2s, 4s, 8s, 16s, 32s, 60s max', () => {
+describe("XtreamProvider — backoff", () => {
+  it("calculates exponential backoff: 0ms, 1s, 2s, 4s, 8s, 16s, 32s, 60s max", () => {
     const provider = new XtreamProvider(TEST_CONFIG);
 
     // Access the protected method via bracket notation for testing
     const getBackoff = () => (provider as any).getBackoffMs() as number;
-    const setFailures = (n: number) => { (provider as any).consecutiveFailures = n; };
+    const setFailures = (n: number) => {
+      (provider as any).consecutiveFailures = n;
+    };
 
     // 0 failures = no backoff
     setFailures(0);

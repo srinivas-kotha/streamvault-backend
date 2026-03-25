@@ -1,19 +1,13 @@
-import { cacheGet, cacheSet } from '../services/cache.service';
+import { cacheGet, cacheSet } from "../services/cache.service";
 import type {
   IStreamProvider,
   ContentType,
-  Category,
-  Channel,
-  VODItem,
-  VODItem as VODItemType,
-  SeriesItem,
-  SeriesInfo,
-  VODInfo,
-  EPGEntry,
-  StreamURL,
+  CatalogCategory,
+  CatalogItem,
+  CatalogItemDetail,
+  NormalizedEPGEntry,
   StreamProxyInfo,
-  AuthResponse,
-} from './provider.types';
+} from "./provider.types";
 
 const FETCH_TIMEOUT_MS = 10_000;
 const MAX_BACKOFF_MS = 60_000;
@@ -26,10 +20,16 @@ export abstract class BaseStreamProvider implements IStreamProvider {
 
   protected getBackoffMs(): number {
     if (this.consecutiveFailures === 0) return 0;
-    return Math.min(1000 * Math.pow(2, this.consecutiveFailures - 1), MAX_BACKOFF_MS);
+    return Math.min(
+      1000 * Math.pow(2, this.consecutiveFailures - 1),
+      MAX_BACKOFF_MS,
+    );
   }
 
-  protected async fetchJson<T>(url: string, headers?: Record<string, string>): Promise<T> {
+  protected async fetchJson<T>(
+    url: string,
+    headers?: Record<string, string>,
+  ): Promise<T> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
 
@@ -66,7 +66,12 @@ export abstract class BaseStreamProvider implements IStreamProvider {
     }
   }
 
-  protected async cachedFetch<T>(cacheKey: string, ttl: number, url: string, headers?: Record<string, string>): Promise<T> {
+  protected async cachedFetch<T>(
+    cacheKey: string,
+    ttl: number,
+    url: string,
+    headers?: Record<string, string>,
+  ): Promise<T> {
     const cached = cacheGet<T>(cacheKey);
     if (cached !== undefined) return cached;
 
@@ -86,13 +91,19 @@ export abstract class BaseStreamProvider implements IStreamProvider {
   }
 
   // Abstract methods — each provider implements these
-  abstract getCategories(type: ContentType): Promise<Category[]>;
-  abstract getStreams(categoryId: string, type: ContentType): Promise<(Channel | VODItem | SeriesItem)[]>;
-  abstract getVODInfo(vodId: string): Promise<VODInfo>;
-  abstract getSeriesInfo(seriesId: string): Promise<SeriesInfo>;
-  abstract getEPG(streamId: string): Promise<EPGEntry[]>;
-  abstract getFullEPG(): Promise<EPGEntry[]>;
-  abstract getStreamURL(streamId: string, type: 'live' | 'vod'): string;
-  abstract getStreamProxyInfo(streamId: string, type: ContentType): StreamProxyInfo;
+  abstract getCategories(type: ContentType): Promise<CatalogCategory[]>;
+  abstract getStreams(
+    categoryId: string,
+    type: ContentType,
+  ): Promise<CatalogItem[]>;
+  abstract getVODInfo(vodId: string): Promise<CatalogItemDetail>;
+  abstract getSeriesInfo(seriesId: string): Promise<CatalogItemDetail>;
+  abstract getEPG(streamId: string): Promise<NormalizedEPGEntry[]>;
+  abstract getFullEPG(): Promise<NormalizedEPGEntry[]>;
+  abstract getStreamURL(streamId: string, type: "live" | "vod"): string;
+  abstract getStreamProxyInfo(
+    streamId: string,
+    type: ContentType,
+  ): StreamProxyInfo;
   abstract getSegmentProxyInfo(segmentPath: string): StreamProxyInfo;
 }

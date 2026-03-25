@@ -282,17 +282,14 @@ export interface IStreamProvider {
   readonly name: string;
 
   // Content browsing
-  getCategories(type: ContentType): Promise<Category[]>;
-  getStreams(
-    categoryId: string,
-    type: ContentType,
-  ): Promise<(Channel | VODItem | SeriesItem)[]>;
-  getVODInfo(vodId: string): Promise<VODInfo>;
-  getSeriesInfo(seriesId: string): Promise<SeriesInfo>;
+  getCategories(type: ContentType): Promise<CatalogCategory[]>;
+  getStreams(categoryId: string, type: ContentType): Promise<CatalogItem[]>;
+  getVODInfo(vodId: string): Promise<CatalogItemDetail>;
+  getSeriesInfo(seriesId: string): Promise<CatalogItemDetail>;
 
   // EPG
-  getEPG(streamId: string): Promise<EPGEntry[]>;
-  getFullEPG(): Promise<EPGEntry[]>;
+  getEPG(streamId: string): Promise<NormalizedEPGEntry[]>;
+  getFullEPG(): Promise<NormalizedEPGEntry[]>;
 
   // Streaming
   getStreamURL(streamId: string, type: "live" | "vod"): string;

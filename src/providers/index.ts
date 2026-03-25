@@ -1,4 +1,4 @@
-export { initProvider, getProvider } from './factory';
+export { initProvider, getProvider } from "./factory";
 export type {
   IStreamProvider,
   ContentType,
@@ -12,4 +12,8 @@ export type {
   StreamURL,
   StreamProxyInfo,
   AuthResponse,
-} from './provider.types';
+  CatalogCategory,
+  CatalogItem,
+  CatalogItemDetail,
+  NormalizedEPGEntry,
+} from "./provider.types";
