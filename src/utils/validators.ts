@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 export const loginSchema = z.object({
   username: z.string().min(1).max(100),
@@ -6,14 +6,14 @@ export const loginSchema = z.object({
 });
 
 export const favoriteSchema = z.object({
-  content_type: z.enum(['channel', 'vod', 'series']),
+  content_type: z.enum(["channel", "vod", "series"]),
   content_name: z.string().max(500).optional(),
   content_icon: z.string().url().max(2000).optional(),
   category_name: z.string().max(200).optional(),
 });
 
 export const historyUpdateSchema = z.object({
-  content_type: z.enum(['channel', 'vod', 'series']),
+  content_type: z.enum(["channel", "vod", "series"]),
   content_name: z.string().max(500).optional(),
   content_icon: z.string().url().max(2000).optional(),
   progress_seconds: z.number().int().min(0),
@@ -62,4 +62,17 @@ export const idSchema = z.object({
 
 export const episodeIdSchema = z.object({
   epId: z.string().regex(/^\d+$/),
+});
+
+export const bulkEpgQuerySchema = z.object({
+  streamIds: z
+    .string()
+    .min(1)
+    .transform((val) => val.split(",").map((id) => id.trim()))
+    .pipe(
+      z
+        .array(z.string().regex(/^\d+$/, "Each stream ID must be numeric"))
+        .min(1, "At least one stream ID required")
+        .max(50, "Maximum 50 stream IDs allowed"),
+    ),
 });
