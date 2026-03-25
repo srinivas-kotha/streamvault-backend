@@ -7,6 +7,7 @@ import type {
   CatalogItemDetail,
   NormalizedEPGEntry,
   StreamProxyInfo,
+  StreamInfo,
   AuthResponse,
 } from "../provider.types";
 import type {
@@ -245,5 +246,49 @@ export class XtreamProvider extends BaseStreamProvider {
       baseUrl: `${this.baseUrl}/live/${this.username}/${this.password}/`,
       allowedHost: { hostname: this.host, port: String(this.port) },
     };
+  }
+
+  getStreamInfo(
+    itemId: string,
+    type: ContentType,
+    extension?: string,
+  ): StreamInfo {
+    const ext = extension ?? this.getDefaultExtension(type);
+    const typePath =
+      type === "live" ? "live" : type === "series" ? "series" : "movie";
+    const url = `${this.baseUrl}/${typePath}/${this.username}/${this.password}/${itemId}.${ext}`;
+
+    return {
+      url,
+      format: this.mapExtToFormat(ext),
+      headers: this.defaultHeaders(),
+      allowedHosts: [{ hostname: this.host, port: String(this.port) }],
+    };
+  }
+
+  private getDefaultExtension(type: ContentType): string {
+    switch (type) {
+      case "live":
+        return "ts";
+      case "vod":
+        return "mp4";
+      case "series":
+        return "mp4";
+    }
+  }
+
+  private mapExtToFormat(ext: string): StreamInfo["format"] {
+    switch (ext) {
+      case "ts":
+        return "ts";
+      case "mp4":
+        return "mp4";
+      case "m3u8":
+        return "m3u8";
+      case "rtmp":
+        return "rtmp";
+      default:
+        return "unknown";
+    }
   }
 }

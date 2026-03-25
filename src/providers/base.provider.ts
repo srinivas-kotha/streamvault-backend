@@ -7,6 +7,7 @@ import type {
   CatalogItemDetail,
   NormalizedEPGEntry,
   StreamProxyInfo,
+  StreamInfo,
 } from "./provider.types";
 
 const FETCH_TIMEOUT_MS = 10_000;
@@ -106,4 +107,9 @@ export abstract class BaseStreamProvider implements IStreamProvider {
     type: ContentType,
   ): StreamProxyInfo;
   abstract getSegmentProxyInfo(segmentPath: string): StreamProxyInfo;
+  abstract getStreamInfo(
+    itemId: string,
+    type: ContentType,
+    extension?: string,
+  ): StreamInfo;
 }

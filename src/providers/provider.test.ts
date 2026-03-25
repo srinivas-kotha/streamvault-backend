@@ -107,6 +107,78 @@ describe("XtreamProvider", () => {
   });
 });
 
+describe("XtreamProvider — getStreamInfo()", () => {
+  let provider: XtreamProvider;
+
+  beforeEach(() => {
+    provider = new XtreamProvider(TEST_CONFIG);
+  });
+
+  it("live stream returns format 'ts' and URL with /live/ path", () => {
+    const info = provider.getStreamInfo("123", "live");
+    expect(info.format).toBe("ts");
+    expect(info.url).toBe(
+      "http://test.example.com:8080/live/testuser/testpass/123.ts",
+    );
+  });
+
+  it("vod stream returns format 'mp4' and URL with /movie/ path", () => {
+    const info = provider.getStreamInfo("456", "vod");
+    expect(info.format).toBe("mp4");
+    expect(info.url).toBe(
+      "http://test.example.com:8080/movie/testuser/testpass/456.mp4",
+    );
+  });
+
+  it("series stream returns format 'mp4' and URL with /series/ path", () => {
+    const info = provider.getStreamInfo("789", "series");
+    expect(info.format).toBe("mp4");
+    expect(info.url).toBe(
+      "http://test.example.com:8080/series/testuser/testpass/789.mp4",
+    );
+  });
+
+  it("custom extension 'mkv' returns format 'unknown'", () => {
+    const info = provider.getStreamInfo("123", "vod", "mkv");
+    expect(info.format).toBe("unknown");
+    expect(info.url).toContain(".mkv");
+  });
+
+  it("custom extension 'm3u8' returns format 'm3u8'", () => {
+    const info = provider.getStreamInfo("123", "live", "m3u8");
+    expect(info.format).toBe("m3u8");
+    expect(info.url).toContain(".m3u8");
+  });
+
+  it("URL contains credentials (username/password in path)", () => {
+    const info = provider.getStreamInfo("99", "live");
+    expect(info.url).toContain("/testuser/testpass/");
+  });
+
+  it("returns User-Agent header", () => {
+    const info = provider.getStreamInfo("1", "live");
+    expect(info.headers["User-Agent"]).toBe("IPTV Smarters Pro/2.2.2.1");
+  });
+
+  it("returns allowedHosts with provider hostname and port", () => {
+    const info = provider.getStreamInfo("1", "live");
+    expect(info.allowedHosts).toEqual([
+      { hostname: "test.example.com", port: "8080" },
+    ]);
+  });
+
+  it("allowedHosts port defaults to '80' when port is 80", () => {
+    const providerDefaultPort = new XtreamProvider({
+      host: "stream.example.com",
+      port: 80,
+      username: "u",
+      password: "p",
+    });
+    const info = providerDefaultPort.getStreamInfo("1", "live");
+    expect(info.allowedHosts[0].port).toBe("80");
+  });
+});
+
 // --- Factory tests ---
 
 describe("Provider Factory", () => {
@@ -134,6 +206,7 @@ describe("IStreamProvider contract", () => {
     expect(typeof provider.getStreamURL).toBe("function");
     expect(typeof provider.getStreamProxyInfo).toBe("function");
     expect(typeof provider.getSegmentProxyInfo).toBe("function");
+    expect(typeof provider.getStreamInfo).toBe("function");
     expect(typeof provider.isHealthy).toBe("function");
   });
 

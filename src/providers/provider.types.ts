@@ -295,6 +295,11 @@ export interface IStreamProvider {
   getStreamURL(streamId: string, type: "live" | "vod"): string;
   getStreamProxyInfo(streamId: string, type: ContentType): StreamProxyInfo;
   getSegmentProxyInfo(segmentPath: string): StreamProxyInfo;
+  getStreamInfo(
+    itemId: string,
+    type: ContentType,
+    extension?: string,
+  ): StreamInfo;
 
   // Health
   isHealthy(): boolean;
