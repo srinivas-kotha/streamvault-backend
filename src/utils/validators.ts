@@ -5,15 +5,20 @@ export const loginSchema = z.object({
   password: z.string().min(1).max(200),
 });
 
+// Accept "live" from frontend, normalize to "channel" for DB storage
+const contentTypeSchema = z
+  .enum(["channel", "live", "vod", "series"])
+  .transform((v) => (v === "live" ? "channel" : v));
+
 export const favoriteSchema = z.object({
-  content_type: z.enum(["channel", "vod", "series"]),
+  content_type: contentTypeSchema,
   content_name: z.string().max(500).optional(),
   content_icon: z.string().url().max(2000).optional(),
   category_name: z.string().max(200).optional(),
 });
 
 export const historyUpdateSchema = z.object({
-  content_type: z.enum(["channel", "vod", "series"]),
+  content_type: contentTypeSchema,
   content_name: z.string().max(500).optional(),
   content_icon: z.string().url().max(2000).optional(),
   progress_seconds: z.number().int().min(0),
