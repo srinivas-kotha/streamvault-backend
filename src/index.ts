@@ -26,6 +26,9 @@ import healthRouter from "./routers/health.router";
 // Phase 3 routers
 import accountRouter from "./routers/account.router";
 
+// CEO Dashboard routers
+import alertsRouter from "./routers/alerts.router";
+
 // Placeholder routers — Phase 2/3
 import streamRouter from "./routers/stream.router";
 import downloadsRouter from "./routers/downloads.router";
@@ -79,6 +82,7 @@ app.use("/api/recordings", recordingsRouter);
 app.use("/api/settings", settingsRouter);
 app.use("/api", eventsRouter);
 app.use("/api/account", accountRouter);
+app.use("/api/alerts", alertsRouter);
 
 // --- Error handler (must be last) ---
 app.use(errorHandler);
