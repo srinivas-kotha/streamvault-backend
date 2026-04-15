@@ -13,6 +13,30 @@ npm start              # production
 npm test               # run tests
 ```
 
+## Resetting the admin password
+
+The `admin` user lives in the `sv_users` table. If the password is lost, upsert it via the
+seed script — it reads `ADMIN_USERNAME` and `ADMIN_INITIAL_PASSWORD` from env, bcrypt-hashes,
+and UPSERTs on `username`. Safe to run repeatedly.
+
+```bash
+# From inside the running container (recommended — uses the API's env + DB connection):
+docker exec \
+  -e ADMIN_USERNAME=admin \
+  -e ADMIN_INITIAL_PASSWORD='<strong-password>' \
+  streamvault_api npm run seed:admin
+
+# Dry run (prints what would happen, hits no DB write):
+docker exec \
+  -e ADMIN_USERNAME=admin \
+  -e ADMIN_INITIAL_PASSWORD='<strong-password>' \
+  -e SEED_ADMIN_DRY_RUN=1 \
+  streamvault_api npm run seed:admin
+```
+
+Pass the password via `-e ADMIN_INITIAL_PASSWORD=...` (not inline in a shell command) to
+keep it out of shell history. Change it via the UI immediately after first login.
+
 ## Architecture
 
 ```
@@ -71,56 +95,56 @@ Zero router changes. Zero frontend changes.
 
 ### Key Abstractions
 
-| Type | Purpose |
-|------|---------|
-| `Category` | Content category (live, VOD, series) |
-| `Channel` | Live TV channel |
-| `VODItem` | Movie/video on demand |
-| `SeriesItem` | TV series |
-| `EPGEntry` | Electronic Program Guide entry |
+| Type              | Purpose                                                                               |
+| ----------------- | ------------------------------------------------------------------------------------- |
+| `Category`        | Content category (live, VOD, series)                                                  |
+| `Channel`         | Live TV channel                                                                       |
+| `VODItem`         | Movie/video on demand                                                                 |
+| `SeriesItem`      | TV series                                                                             |
+| `EPGEntry`        | Electronic Program Guide entry                                                        |
 | `StreamProxyInfo` | Everything needed to proxy a stream: URL, headers, SSRF validation, M3U8 rewrite base |
 
 ## API Endpoints
 
-| Route | Description |
-|-------|-------------|
-| `GET /health` | Health check + provider status |
-| `POST /api/auth/login` | Username/password login |
-| `POST /api/auth/refresh` | Token refresh (rotation) |
-| `GET /api/live/categories` | Live TV categories |
-| `GET /api/live/streams/:catId` | Channels in category |
-| `GET /api/live/featured` | Priority channels |
-| `GET /api/live/epg/:streamId` | EPG for channel |
-| `GET /api/vod/categories` | VOD categories |
-| `GET /api/vod/streams/:catId` | Movies in category |
-| `GET /api/vod/info/:vodId` | Movie details |
-| `GET /api/series/categories` | Series categories |
-| `GET /api/series/list/:catId` | Series in category |
-| `GET /api/series/info/:seriesId` | Series details + episodes |
-| `GET /api/search?q=` | Search across all content |
-| `GET /api/stream/:type/:id` | Stream proxy (FFmpeg transcode for live) |
-| `GET /api/favorites` | User favorites |
-| `GET /api/history` | Watch history |
+| Route                            | Description                              |
+| -------------------------------- | ---------------------------------------- |
+| `GET /health`                    | Health check + provider status           |
+| `POST /api/auth/login`           | Username/password login                  |
+| `POST /api/auth/refresh`         | Token refresh (rotation)                 |
+| `GET /api/live/categories`       | Live TV categories                       |
+| `GET /api/live/streams/:catId`   | Channels in category                     |
+| `GET /api/live/featured`         | Priority channels                        |
+| `GET /api/live/epg/:streamId`    | EPG for channel                          |
+| `GET /api/vod/categories`        | VOD categories                           |
+| `GET /api/vod/streams/:catId`    | Movies in category                       |
+| `GET /api/vod/info/:vodId`       | Movie details                            |
+| `GET /api/series/categories`     | Series categories                        |
+| `GET /api/series/list/:catId`    | Series in category                       |
+| `GET /api/series/info/:seriesId` | Series details + episodes                |
+| `GET /api/search?q=`             | Search across all content                |
+| `GET /api/stream/:type/:id`      | Stream proxy (FFmpeg transcode for live) |
+| `GET /api/favorites`             | User favorites                           |
+| `GET /api/history`               | Watch history                            |
 
 ## Environment Variables
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `PROVIDER_TYPE` | No | `xtream` | Stream provider type |
-| `XTREAM_HOST` | Yes* | — | Xtream provider hostname |
-| `XTREAM_PORT` | No | `80` | Xtream provider port |
-| `XTREAM_USERNAME` | Yes* | — | Xtream credentials |
-| `XTREAM_PASSWORD` | Yes* | — | Xtream credentials |
-| `POSTGRES_HOST` | Yes | — | Database host |
-| `POSTGRES_DB` | Yes | — | Database name |
-| `POSTGRES_USER` | Yes | — | Database user |
-| `POSTGRES_PASSWORD` | Yes | — | Database password |
-| `JWT_SECRET` | Yes | — | Access token signing key |
-| `JWT_REFRESH_SECRET` | Yes | — | Refresh token signing key |
-| `PORT` | No | `3001` | Server port |
-| `CORS_ORIGIN` | No | `https://streamvault.srinivaskotha.uk` | Allowed origin |
+| Variable             | Required | Default                                | Description               |
+| -------------------- | -------- | -------------------------------------- | ------------------------- |
+| `PROVIDER_TYPE`      | No       | `xtream`                               | Stream provider type      |
+| `XTREAM_HOST`        | Yes\*    | —                                      | Xtream provider hostname  |
+| `XTREAM_PORT`        | No       | `80`                                   | Xtream provider port      |
+| `XTREAM_USERNAME`    | Yes\*    | —                                      | Xtream credentials        |
+| `XTREAM_PASSWORD`    | Yes\*    | —                                      | Xtream credentials        |
+| `POSTGRES_HOST`      | Yes      | —                                      | Database host             |
+| `POSTGRES_DB`        | Yes      | —                                      | Database name             |
+| `POSTGRES_USER`      | Yes      | —                                      | Database user             |
+| `POSTGRES_PASSWORD`  | Yes      | —                                      | Database password         |
+| `JWT_SECRET`         | Yes      | —                                      | Access token signing key  |
+| `JWT_REFRESH_SECRET` | Yes      | —                                      | Refresh token signing key |
+| `PORT`               | No       | `3001`                                 | Server port               |
+| `CORS_ORIGIN`        | No       | `https://streamvault.srinivaskotha.uk` | Allowed origin            |
 
-*Required when `PROVIDER_TYPE=xtream`
+\*Required when `PROVIDER_TYPE=xtream`
 
 ## Testing
 
