@@ -69,6 +69,13 @@ export const episodeIdSchema = z.object({
   epId: z.string().regex(/^\d+$/),
 });
 
+// Presence-only schema — password policy (length, same-as-current) is enforced
+// in the route handler so policy violations map to 422, not 400.
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, "currentPassword is required"),
+  newPassword: z.string().min(1, "newPassword is required"),
+});
+
 export const bulkEpgQuerySchema = z.object({
   streamIds: z
     .string()
