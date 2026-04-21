@@ -28,9 +28,15 @@ vi.mock("../middleware/auth", () => ({
   },
 }));
 
-// Mock loginLimiter — pass through in tests
+// Mock rate limiters — pass through in tests
+// Note: vi.mock factory is hoisted, so inline functions are required (no variable refs)
 vi.mock("../middleware/rateLimiter", () => ({
   loginLimiter: (
+    _req: express.Request,
+    _res: express.Response,
+    next: express.NextFunction,
+  ) => next(),
+  changePasswordLimiter: (
     _req: express.Request,
     _res: express.Response,
     next: express.NextFunction,
@@ -183,12 +189,10 @@ describe("POST /api/auth/change-password", () => {
       // Second call: compare newPassword → stored hash (same → reject)
       .mockResolvedValueOnce(true as never);
 
-    const res = await request(app)
-      .post(ENDPOINT)
-      .send({
-        currentPassword: "OldPassword123!",
-        newPassword: "OldPassword123!",
-      });
+    const res = await request(app).post(ENDPOINT).send({
+      currentPassword: "OldPassword123!",
+      newPassword: "OldPassword123!",
+    });
 
     expect(res.status).toBe(422);
     expect(res.body.message).toMatch(/same/i);

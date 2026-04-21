@@ -9,7 +9,7 @@ import {
 } from "../utils/jwt";
 import { query } from "../services/db.service";
 import { authMiddleware } from "../middleware/auth";
-import { loginLimiter } from "../middleware/rateLimiter";
+import { loginLimiter, changePasswordLimiter } from "../middleware/rateLimiter";
 import { config } from "../config";
 import { isIPTrusted } from "../utils/ip";
 import type { DbUser, DbRefreshToken } from "../types/db.types";
@@ -286,6 +286,7 @@ router.post("/logout", authMiddleware, async (req: Request, res: Response) => {
 // Does NOT add this path to CSRF_EXEMPT_PATHS — authenticated endpoints stay CSRF-protected.
 router.post(
   "/change-password",
+  changePasswordLimiter,
   authMiddleware,
   async (req: Request, res: Response) => {
     try {
