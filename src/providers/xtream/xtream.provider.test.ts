@@ -41,6 +41,22 @@ function makeProvider(): XtreamProvider {
   return new XtreamProvider(TEST_CONFIG);
 }
 
+// Type-safe accessor for the protected `cachedFetch` method. Tests spy on this
+// to avoid outbound network calls; keeping a single typed alias lets us avoid
+// `as any` sprinkled throughout the suite.
+type ProviderWithCachedFetch = XtreamProvider & {
+  cachedFetch: <T>(
+    cacheKey: string,
+    ttl: number,
+    url: string,
+    headers?: Record<string, string>,
+  ) => Promise<T>;
+};
+
+function spyOnCachedFetch(provider: XtreamProvider) {
+  return vi.spyOn(provider as ProviderWithCachedFetch, "cachedFetch");
+}
+
 // ---------------------------------------------------------------------------
 // Raw Xtream fixtures (realistic API responses)
 // ---------------------------------------------------------------------------
@@ -254,7 +270,7 @@ describe("XtreamProvider.getCategories() — returns CatalogCategory[]", () => {
   });
 
   it("returns CatalogCategory[] with camelCase id field for live type", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(rawCategories);
+    spyOnCachedFetch(provider).mockResolvedValue(rawCategories);
 
     const result = await provider.getCategories("live");
 
@@ -263,7 +279,7 @@ describe("XtreamProvider.getCategories() — returns CatalogCategory[]", () => {
   });
 
   it("maps category_id (string) → id (string)", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(rawCategories);
+    spyOnCachedFetch(provider).mockResolvedValue(rawCategories);
 
     const result = await provider.getCategories("live");
 
@@ -272,7 +288,7 @@ describe("XtreamProvider.getCategories() — returns CatalogCategory[]", () => {
   });
 
   it("maps category_name → name", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(rawCategories);
+    spyOnCachedFetch(provider).mockResolvedValue(rawCategories);
 
     const result = await provider.getCategories("live");
 
@@ -281,7 +297,7 @@ describe("XtreamProvider.getCategories() — returns CatalogCategory[]", () => {
   });
 
   it("maps parent_id 0 → parentId null", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(rawCategories);
+    spyOnCachedFetch(provider).mockResolvedValue(rawCategories);
 
     const result = await provider.getCategories("live");
 
@@ -289,7 +305,7 @@ describe("XtreamProvider.getCategories() — returns CatalogCategory[]", () => {
   });
 
   it("maps non-zero parent_id → parentId as string", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(rawCategories);
+    spyOnCachedFetch(provider).mockResolvedValue(rawCategories);
 
     const result = await provider.getCategories("live");
 
@@ -298,7 +314,7 @@ describe("XtreamProvider.getCategories() — returns CatalogCategory[]", () => {
   });
 
   it("sets type to 'live' for live categories", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(rawCategories);
+    spyOnCachedFetch(provider).mockResolvedValue(rawCategories);
 
     const result = await provider.getCategories("live");
 
@@ -306,7 +322,7 @@ describe("XtreamProvider.getCategories() — returns CatalogCategory[]", () => {
   });
 
   it("sets type to 'vod' for vod categories", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(rawCategories);
+    spyOnCachedFetch(provider).mockResolvedValue(rawCategories);
 
     const result = await provider.getCategories("vod");
 
@@ -314,7 +330,7 @@ describe("XtreamProvider.getCategories() — returns CatalogCategory[]", () => {
   });
 
   it("sets type to 'series' for series categories", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(rawCategories);
+    spyOnCachedFetch(provider).mockResolvedValue(rawCategories);
 
     const result = await provider.getCategories("series");
 
@@ -322,7 +338,7 @@ describe("XtreamProvider.getCategories() — returns CatalogCategory[]", () => {
   });
 
   it("returns the correct full CatalogCategory shape", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue([
+    spyOnCachedFetch(provider).mockResolvedValue([
       rawCategories[0],
     ]);
 
@@ -337,7 +353,7 @@ describe("XtreamProvider.getCategories() — returns CatalogCategory[]", () => {
   });
 
   it("returns empty array when API returns empty", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue([]);
+    spyOnCachedFetch(provider).mockResolvedValue([]);
 
     const result = await provider.getCategories("live");
 
@@ -362,7 +378,7 @@ describe("XtreamProvider.getStreams() — live — returns CatalogItem[]", () =>
   });
 
   it("returns CatalogItem[] with camelCase id field", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(rawLiveStreams);
+    spyOnCachedFetch(provider).mockResolvedValue(rawLiveStreams);
 
     const result = await provider.getStreams("5", "live");
 
@@ -371,7 +387,7 @@ describe("XtreamProvider.getStreams() — live — returns CatalogItem[]", () =>
   });
 
   it("maps stream_id (number) → id (string)", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(rawLiveStreams);
+    spyOnCachedFetch(provider).mockResolvedValue(rawLiveStreams);
 
     const result = await provider.getStreams("5", "live");
 
@@ -379,7 +395,7 @@ describe("XtreamProvider.getStreams() — live — returns CatalogItem[]", () =>
   });
 
   it("sets type to 'live'", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(rawLiveStreams);
+    spyOnCachedFetch(provider).mockResolvedValue(rawLiveStreams);
 
     const result = await provider.getStreams("5", "live");
 
@@ -387,7 +403,7 @@ describe("XtreamProvider.getStreams() — live — returns CatalogItem[]", () =>
   });
 
   it("maps categoryId as string", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(rawLiveStreams);
+    spyOnCachedFetch(provider).mockResolvedValue(rawLiveStreams);
 
     const result = await provider.getStreams("5", "live");
 
@@ -395,7 +411,7 @@ describe("XtreamProvider.getStreams() — live — returns CatalogItem[]", () =>
   });
 
   it("maps is_adult '0' → isAdult false", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(rawLiveStreams);
+    spyOnCachedFetch(provider).mockResolvedValue(rawLiveStreams);
 
     const result = await provider.getStreams("5", "live");
 
@@ -403,7 +419,7 @@ describe("XtreamProvider.getStreams() — live — returns CatalogItem[]", () =>
   });
 
   it("maps is_adult '1' → isAdult true", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(rawLiveStreams);
+    spyOnCachedFetch(provider).mockResolvedValue(rawLiveStreams);
 
     const result = await provider.getStreams("5", "live");
 
@@ -412,7 +428,7 @@ describe("XtreamProvider.getStreams() — live — returns CatalogItem[]", () =>
   });
 
   it("maps empty stream_icon → icon null", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(rawLiveStreams);
+    spyOnCachedFetch(provider).mockResolvedValue(rawLiveStreams);
 
     const result = await provider.getStreams("5", "live");
 
@@ -421,7 +437,7 @@ describe("XtreamProvider.getStreams() — live — returns CatalogItem[]", () =>
   });
 
   it("returns the correct full CatalogItem shape for live", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue([
+    spyOnCachedFetch(provider).mockResolvedValue([
       rawLiveStreams[0],
     ]);
 
@@ -452,7 +468,7 @@ describe("XtreamProvider.getStreams() — vod — returns CatalogItem[]", () => 
   });
 
   it("maps stream_id (number) → id (string) for VOD", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(rawVODStreams);
+    spyOnCachedFetch(provider).mockResolvedValue(rawVODStreams);
 
     const result = await provider.getStreams("12", "vod");
 
@@ -460,7 +476,7 @@ describe("XtreamProvider.getStreams() — vod — returns CatalogItem[]", () => 
   });
 
   it("sets type to 'vod'", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(rawVODStreams);
+    spyOnCachedFetch(provider).mockResolvedValue(rawVODStreams);
 
     const result = await provider.getStreams("12", "vod");
 
@@ -468,7 +484,7 @@ describe("XtreamProvider.getStreams() — vod — returns CatalogItem[]", () => 
   });
 
   it("maps rating field for VOD", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(rawVODStreams);
+    spyOnCachedFetch(provider).mockResolvedValue(rawVODStreams);
 
     const result = await provider.getStreams("12", "vod");
 
@@ -476,7 +492,7 @@ describe("XtreamProvider.getStreams() — vod — returns CatalogItem[]", () => 
   });
 
   it("maps is_adult '1' → isAdult true for VOD", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(rawVODStreams);
+    spyOnCachedFetch(provider).mockResolvedValue(rawVODStreams);
 
     const result = await provider.getStreams("12", "vod");
 
@@ -484,7 +500,7 @@ describe("XtreamProvider.getStreams() — vod — returns CatalogItem[]", () => 
   });
 
   it("returns the correct full CatalogItem shape for VOD", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue([
+    spyOnCachedFetch(provider).mockResolvedValue([
       rawVODStreams[0],
     ]);
 
@@ -516,7 +532,7 @@ describe("XtreamProvider.getStreams() — series — returns CatalogItem[]", () 
   });
 
   it("uses series_id (not stream_id) → id (string)", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(rawSeriesItems);
+    spyOnCachedFetch(provider).mockResolvedValue(rawSeriesItems);
 
     const result = await provider.getStreams("7", "series");
 
@@ -525,7 +541,7 @@ describe("XtreamProvider.getStreams() — series — returns CatalogItem[]", () 
   });
 
   it("sets type to 'series'", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(rawSeriesItems);
+    spyOnCachedFetch(provider).mockResolvedValue(rawSeriesItems);
 
     const result = await provider.getStreams("7", "series");
 
@@ -533,7 +549,7 @@ describe("XtreamProvider.getStreams() — series — returns CatalogItem[]", () 
   });
 
   it("maps cover → icon for series", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(rawSeriesItems);
+    spyOnCachedFetch(provider).mockResolvedValue(rawSeriesItems);
 
     const result = await provider.getStreams("7", "series");
 
@@ -541,7 +557,7 @@ describe("XtreamProvider.getStreams() — series — returns CatalogItem[]", () 
   });
 
   it("maps genre for series", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(rawSeriesItems);
+    spyOnCachedFetch(provider).mockResolvedValue(rawSeriesItems);
 
     const result = await provider.getStreams("7", "series");
 
@@ -549,7 +565,7 @@ describe("XtreamProvider.getStreams() — series — returns CatalogItem[]", () 
   });
 
   it("maps year from releaseDate for series", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(rawSeriesItems);
+    spyOnCachedFetch(provider).mockResolvedValue(rawSeriesItems);
 
     const result = await provider.getStreams("7", "series");
 
@@ -557,7 +573,7 @@ describe("XtreamProvider.getStreams() — series — returns CatalogItem[]", () 
   });
 
   it("returns the correct full CatalogItem shape for series", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue([
+    spyOnCachedFetch(provider).mockResolvedValue([
       rawSeriesItems[0],
     ]);
 
@@ -595,7 +611,7 @@ describe("XtreamProvider.getVODInfo() — returns CatalogItemDetail", () => {
   });
 
   it("returns CatalogItemDetail with camelCase fields", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(rawVODInfo);
+    spyOnCachedFetch(provider).mockResolvedValue(rawVODInfo);
 
     const result = await provider.getVODInfo("202");
 
@@ -611,7 +627,7 @@ describe("XtreamProvider.getVODInfo() — returns CatalogItemDetail", () => {
   });
 
   it("maps movie_data.stream_id → id (string)", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(rawVODInfo);
+    spyOnCachedFetch(provider).mockResolvedValue(rawVODInfo);
 
     const result = await provider.getVODInfo("202");
 
@@ -619,7 +635,7 @@ describe("XtreamProvider.getVODInfo() — returns CatalogItemDetail", () => {
   });
 
   it("maps info.plot → plot", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(rawVODInfo);
+    spyOnCachedFetch(provider).mockResolvedValue(rawVODInfo);
 
     const result = await provider.getVODInfo("202");
 
@@ -629,7 +645,7 @@ describe("XtreamProvider.getVODInfo() — returns CatalogItemDetail", () => {
   });
 
   it("maps info.cast → cast", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(rawVODInfo);
+    spyOnCachedFetch(provider).mockResolvedValue(rawVODInfo);
 
     const result = await provider.getVODInfo("202");
 
@@ -637,7 +653,7 @@ describe("XtreamProvider.getVODInfo() — returns CatalogItemDetail", () => {
   });
 
   it("maps movie_data.container_extension → containerExtension", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(rawVODInfo);
+    spyOnCachedFetch(provider).mockResolvedValue(rawVODInfo);
 
     const result = await provider.getVODInfo("202");
 
@@ -645,7 +661,7 @@ describe("XtreamProvider.getVODInfo() — returns CatalogItemDetail", () => {
   });
 
   it("maps info.tmdb_id → tmdbId", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(rawVODInfo);
+    spyOnCachedFetch(provider).mockResolvedValue(rawVODInfo);
 
     const result = await provider.getVODInfo("202");
 
@@ -653,7 +669,7 @@ describe("XtreamProvider.getVODInfo() — returns CatalogItemDetail", () => {
   });
 
   it("maps info.duration_secs → durationSecs", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(rawVODInfo);
+    spyOnCachedFetch(provider).mockResolvedValue(rawVODInfo);
 
     const result = await provider.getVODInfo("202");
 
@@ -661,7 +677,7 @@ describe("XtreamProvider.getVODInfo() — returns CatalogItemDetail", () => {
   });
 
   it("maps type to 'vod'", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(rawVODInfo);
+    spyOnCachedFetch(provider).mockResolvedValue(rawVODInfo);
 
     const result = await provider.getVODInfo("202");
 
@@ -669,7 +685,7 @@ describe("XtreamProvider.getVODInfo() — returns CatalogItemDetail", () => {
   });
 
   it("returns the correct full CatalogItemDetail shape", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(rawVODInfo);
+    spyOnCachedFetch(provider).mockResolvedValue(rawVODInfo);
 
     const result = await provider.getVODInfo("202");
 
@@ -712,7 +728,7 @@ describe("XtreamProvider.getSeriesInfo() — returns CatalogItemDetail", () => {
   });
 
   it("returns CatalogItemDetail with camelCase fields", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(rawSeriesInfo);
+    spyOnCachedFetch(provider).mockResolvedValue(rawSeriesInfo);
 
     const result = await provider.getSeriesInfo("303");
 
@@ -726,7 +742,7 @@ describe("XtreamProvider.getSeriesInfo() — returns CatalogItemDetail", () => {
   });
 
   it("uses the seriesId param as id", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(rawSeriesInfo);
+    spyOnCachedFetch(provider).mockResolvedValue(rawSeriesInfo);
 
     const result = await provider.getSeriesInfo("303");
 
@@ -734,7 +750,7 @@ describe("XtreamProvider.getSeriesInfo() — returns CatalogItemDetail", () => {
   });
 
   it("maps type to 'series'", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(rawSeriesInfo);
+    spyOnCachedFetch(provider).mockResolvedValue(rawSeriesInfo);
 
     const result = await provider.getSeriesInfo("303");
 
@@ -742,7 +758,7 @@ describe("XtreamProvider.getSeriesInfo() — returns CatalogItemDetail", () => {
   });
 
   it("maps info.plot → plot", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(rawSeriesInfo);
+    spyOnCachedFetch(provider).mockResolvedValue(rawSeriesInfo);
 
     const result = await provider.getSeriesInfo("303");
 
@@ -752,7 +768,7 @@ describe("XtreamProvider.getSeriesInfo() — returns CatalogItemDetail", () => {
   });
 
   it("returns seasons as SeasonInfo[] with camelCase fields", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(rawSeriesInfo);
+    spyOnCachedFetch(provider).mockResolvedValue(rawSeriesInfo);
 
     const result = await provider.getSeriesInfo("303");
 
@@ -769,7 +785,7 @@ describe("XtreamProvider.getSeriesInfo() — returns CatalogItemDetail", () => {
   });
 
   it("returns episodes as Record<string, EpisodeInfo[]> with camelCase fields", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(rawSeriesInfo);
+    spyOnCachedFetch(provider).mockResolvedValue(rawSeriesInfo);
 
     const result = await provider.getSeriesInfo("303");
 
@@ -786,7 +802,7 @@ describe("XtreamProvider.getSeriesInfo() — returns CatalogItemDetail", () => {
   });
 
   it("maps info.backdrop_path[0] → backdropUrl", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(rawSeriesInfo);
+    spyOnCachedFetch(provider).mockResolvedValue(rawSeriesInfo);
 
     const result = await provider.getSeriesInfo("303");
 
@@ -795,7 +811,7 @@ describe("XtreamProvider.getSeriesInfo() — returns CatalogItemDetail", () => {
 
   it("returns empty seasons array when API has no seasons", async () => {
     const noSeasons: XtreamSeriesInfo = { ...rawSeriesInfo, seasons: [] };
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(noSeasons);
+    spyOnCachedFetch(provider).mockResolvedValue(noSeasons);
 
     const result = await provider.getSeriesInfo("303");
 
@@ -804,7 +820,7 @@ describe("XtreamProvider.getSeriesInfo() — returns CatalogItemDetail", () => {
 
   it("returns empty episodes record when API has no episodes", async () => {
     const noEpisodes: XtreamSeriesInfo = { ...rawSeriesInfo, episodes: {} };
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(noEpisodes);
+    spyOnCachedFetch(provider).mockResolvedValue(noEpisodes);
 
     const result = await provider.getSeriesInfo("303");
 
@@ -985,7 +1001,7 @@ describe("isAdult field accuracy across getStreams()", () => {
   });
 
   it("live: is_adult '0' → isAdult false", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue([
+    spyOnCachedFetch(provider).mockResolvedValue([
       rawLiveStreams[0],
     ]);
 
@@ -995,7 +1011,7 @@ describe("isAdult field accuracy across getStreams()", () => {
   });
 
   it("live: is_adult '1' → isAdult true", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue([
+    spyOnCachedFetch(provider).mockResolvedValue([
       rawLiveStreams[1],
     ]);
 
@@ -1005,7 +1021,7 @@ describe("isAdult field accuracy across getStreams()", () => {
   });
 
   it("vod: is_adult '0' → isAdult false", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue([
+    spyOnCachedFetch(provider).mockResolvedValue([
       rawVODStreams[0],
     ]);
 
@@ -1015,7 +1031,7 @@ describe("isAdult field accuracy across getStreams()", () => {
   });
 
   it("vod: is_adult '1' → isAdult true", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue([
+    spyOnCachedFetch(provider).mockResolvedValue([
       rawVODStreams[1],
     ]);
 
@@ -1025,7 +1041,7 @@ describe("isAdult field accuracy across getStreams()", () => {
   });
 
   it("series: isAdult defaults to false (no is_adult field on XtreamSeriesItem)", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(rawSeriesItems);
+    spyOnCachedFetch(provider).mockResolvedValue(rawSeriesItems);
 
     const result = await provider.getStreams("7", "series");
 
@@ -1050,7 +1066,7 @@ describe("Edge cases", () => {
   });
 
   it("getStreams() returns empty array for empty API response", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue([]);
+    spyOnCachedFetch(provider).mockResolvedValue([]);
 
     const result = await provider.getStreams("999", "live");
 
@@ -1058,7 +1074,7 @@ describe("Edge cases", () => {
   });
 
   it("getStreams() returns empty array for empty VOD API response", async () => {
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue([]);
+    spyOnCachedFetch(provider).mockResolvedValue([]);
 
     const result = await provider.getStreams("999", "vod");
 
@@ -1070,7 +1086,7 @@ describe("Edge cases", () => {
       ...rawLiveStreams[0]!,
       stream_icon: "",
     };
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue([streamNoIcon]);
+    spyOnCachedFetch(provider).mockResolvedValue([streamNoIcon]);
 
     const result = await provider.getStreams("5", "live");
 
@@ -1082,7 +1098,7 @@ describe("Edge cases", () => {
       ...rawLiveStreams[0]!,
       added: "",
     };
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue([streamNoAdded]);
+    spyOnCachedFetch(provider).mockResolvedValue([streamNoAdded]);
 
     const result = await provider.getStreams("5", "live");
 
@@ -1115,7 +1131,7 @@ describe("Edge cases", () => {
         direct_source: "",
       },
     };
-    vi.spyOn(provider as any, "cachedFetch").mockResolvedValue(minimalVODInfo);
+    spyOnCachedFetch(provider).mockResolvedValue(minimalVODInfo);
 
     const result = await provider.getVODInfo("999");
 

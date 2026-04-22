@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { cacheFlush, cacheGet } from "./cache.service";
+import { cacheFlush } from "./cache.service";
 import type { IStreamProvider, CatalogItem, ContentType } from "../providers";
 
 // ─────────────────────────────────────────────────────────────────────────────

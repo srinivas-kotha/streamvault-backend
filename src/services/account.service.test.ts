@@ -43,19 +43,9 @@ function makeMockProvider(
   };
 }
 
-// Reset module-level state between tests
-// We do this by clearing the cache (account status is cached) and reloading.
-// The connection counters are module-level — we reset them via the exported functions.
-
-function resetConnectionState(): void {
-  // Drain all tracked connections by calling decrement for each possible key
-  // In a real test environment we'd mock the module, but here we use the
-  // incrementally-testable exported functions.
-  const count = getActiveConnections();
-  for (let i = 0; i < count; i++) {
-    // Brute-force cleanup: decrement without a key (won't match, so safe)
-  }
-}
+// Reset module-level state between tests.
+// Each test uses unique keys to avoid cross-test interference on the
+// module-level connection counters, so we don't need a global reset helper.
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Connection counter tests
@@ -63,8 +53,6 @@ function resetConnectionState(): void {
 
 describe("incrementConnections / decrementConnections", () => {
   const KEY_A = "user1:stream100";
-  const KEY_B = "user1:stream200";
-  const KEY_C = "user2:stream100";
 
   // Each test group is isolated by using unique keys
   it("increments count when a new key is added", () => {
