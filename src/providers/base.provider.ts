@@ -91,6 +91,19 @@ export abstract class BaseStreamProvider implements IStreamProvider {
     return this.healthy;
   }
 
+  /**
+   * Reset the failure counter and mark the provider healthy.
+   *
+   * Intended for background warmup/pre-refresh flows (see warmup.service.ts /
+   * ADR-009): a warmup failure should not add exponential backoff delay to
+   * subsequent real user requests. Warmup calls this after a caught failure
+   * so the provider state reflects the latest real-traffic interaction only.
+   */
+  resetFailureState(): void {
+    this.consecutiveFailures = 0;
+    this.healthy = true;
+  }
+
   // Abstract methods — each provider implements these
   abstract getCategories(type: ContentType): Promise<CatalogCategory[]>;
   abstract getStreams(

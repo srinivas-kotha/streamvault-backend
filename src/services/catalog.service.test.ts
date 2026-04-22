@@ -12,6 +12,7 @@ function makeMockProvider(
   return {
     name: "test-provider",
     isHealthy: () => true,
+    resetFailureState: vi.fn(),
     getCategories: vi.fn().mockResolvedValue([]),
     getStreams: vi.fn().mockResolvedValue([]),
     getVODInfo: vi.fn().mockResolvedValue({}),
