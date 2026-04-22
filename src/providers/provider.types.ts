@@ -131,6 +131,14 @@ export interface IStreamProvider {
   // Health
   isHealthy(): boolean;
 
+  /**
+   * Reset the backoff counter and mark the provider healthy.
+   * Intended for background warmup/pre-refresh callers that should not
+   * poison real-user request backoff state when an opportunistic refresh
+   * fails. See warmup.service.ts.
+   */
+  resetFailureState(): void;
+
   // Auth (optional — not all providers need it)
   authenticate?(): Promise<AccountInfo>;
 }

@@ -12,6 +12,7 @@ import { killAllFFmpeg } from "./utils/ffmpeg";
 import { initProvider } from "./providers";
 import { startCatalogSync } from "./services/catalog.service";
 import { startEPGRefresh } from "./services/epg.service";
+import { startCacheWarmup } from "./services/warmup.service";
 
 // Router imports — built by other agents
 import authRouter from "./routers/auth.router";
@@ -105,6 +106,10 @@ async function startServer(): Promise<void> {
 
     const server = app.listen(config.port, () => {
       console.log(`StreamVault API listening on port ${config.port}`);
+      // ADR-009: prime Xtream cache + start TTL pre-refresh AFTER the server
+      // is accepting connections — warmup is non-blocking and must never
+      // delay the listen socket.
+      startCacheWarmup(provider);
     });
 
     // --- Graceful shutdown ---
