@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { XtreamProvider } from "./xtream/xtream.provider";
 import { cacheFlush } from "../services/cache.service";
-import type { IStreamProvider, ContentType } from "./provider.types";
+import type { IStreamProvider } from "./provider.types";
 
 // --- XtreamProvider unit tests ---
 
@@ -400,14 +400,22 @@ describe("XtreamProvider — health tracking", () => {
   });
 });
 
+// Type alias for accessing protected members on the provider in tests.
+// Exposes `getBackoffMs` and `consecutiveFailures` so we can drive the
+// backoff calculation without `as any` casts.
+type ProviderWithProtected = XtreamProvider & {
+  getBackoffMs: () => number;
+  consecutiveFailures: number;
+};
+
 describe("XtreamProvider — backoff", () => {
   it("calculates exponential backoff: 0ms, 1s, 2s, 4s, 8s, 16s, 32s, 60s max", () => {
-    const provider = new XtreamProvider(TEST_CONFIG);
+    const provider = new XtreamProvider(TEST_CONFIG) as ProviderWithProtected;
 
-    // Access the protected method via bracket notation for testing
-    const getBackoff = () => (provider as any).getBackoffMs() as number;
+    // Access the protected method via the typed alias for testing
+    const getBackoff = () => provider.getBackoffMs();
     const setFailures = (n: number) => {
-      (provider as any).consecutiveFailures = n;
+      provider.consecutiveFailures = n;
     };
 
     // 0 failures = no backoff
