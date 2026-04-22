@@ -1136,10 +1136,14 @@ describe("Edge cases", () => {
 
 describe("XtreamProvider — XTREAM_MOCK=true", () => {
   const originalMock = process.env.XTREAM_MOCK;
+  // Use a global spy on fetch — no need to poke at protected methods, and
+  // avoids introducing new `as any` casts on the provider instance.
+  let fetchSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     cacheFlush();
     process.env.XTREAM_MOCK = "true";
+    fetchSpy = vi.spyOn(globalThis, "fetch");
   });
 
   afterEach(() => {
@@ -1153,8 +1157,6 @@ describe("XtreamProvider — XTREAM_MOCK=true", () => {
 
   it("authenticate() returns canned AccountInfo without hitting the network", async () => {
     const provider = makeProvider();
-    const fetchSpy = vi.spyOn(provider as any, "fetchJson");
-
     const result = await provider.authenticate();
 
     expect(fetchSpy).not.toHaveBeenCalled();
@@ -1164,8 +1166,6 @@ describe("XtreamProvider — XTREAM_MOCK=true", () => {
 
   it("getCategories() returns a single mock category per type", async () => {
     const provider = makeProvider();
-    const fetchSpy = vi.spyOn(provider as any, "cachedFetch");
-
     const live = await provider.getCategories("live");
     const vod = await provider.getCategories("vod");
     const series = await provider.getCategories("series");
@@ -1179,8 +1179,6 @@ describe("XtreamProvider — XTREAM_MOCK=true", () => {
 
   it("getStreams() returns one mock item per type without network", async () => {
     const provider = makeProvider();
-    const fetchSpy = vi.spyOn(provider as any, "cachedFetch");
-
     const items = await provider.getStreams("mock-1", "live");
 
     expect(fetchSpy).not.toHaveBeenCalled();
@@ -1191,8 +1189,6 @@ describe("XtreamProvider — XTREAM_MOCK=true", () => {
 
   it("getEPG() / getFullEPG() return empty arrays without network", async () => {
     const provider = makeProvider();
-    const fetchSpy = vi.spyOn(provider as any, "fetchJson");
-
     expect(await provider.getEPG("any")).toEqual([]);
     expect(await provider.getFullEPG()).toEqual([]);
     expect(fetchSpy).not.toHaveBeenCalled();
@@ -1200,8 +1196,6 @@ describe("XtreamProvider — XTREAM_MOCK=true", () => {
 
   it("getVODInfo() / getSeriesInfo() return minimal valid detail shapes", async () => {
     const provider = makeProvider();
-    const fetchSpy = vi.spyOn(provider as any, "cachedFetch");
-
     const vod = await provider.getVODInfo("42");
     const series = await provider.getSeriesInfo("99");
 
