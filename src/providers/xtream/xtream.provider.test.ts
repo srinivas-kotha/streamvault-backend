@@ -1129,3 +1129,87 @@ describe("Edge cases", () => {
     expect(result.added).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+// XTREAM_MOCK=true — CI short-circuit (no outbound network, canned fixtures)
+// ---------------------------------------------------------------------------
+
+describe("XtreamProvider — XTREAM_MOCK=true", () => {
+  const originalMock = process.env.XTREAM_MOCK;
+
+  beforeEach(() => {
+    cacheFlush();
+    process.env.XTREAM_MOCK = "true";
+  });
+
+  afterEach(() => {
+    if (originalMock === undefined) {
+      delete process.env.XTREAM_MOCK;
+    } else {
+      process.env.XTREAM_MOCK = originalMock;
+    }
+    vi.restoreAllMocks();
+  });
+
+  it("authenticate() returns canned AccountInfo without hitting the network", async () => {
+    const provider = makeProvider();
+    const fetchSpy = vi.spyOn(provider as any, "fetchJson");
+
+    const result = await provider.authenticate();
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(result.username).toBe("testuser");
+    expect(result.status).toBe("active");
+  });
+
+  it("getCategories() returns a single mock category per type", async () => {
+    const provider = makeProvider();
+    const fetchSpy = vi.spyOn(provider as any, "cachedFetch");
+
+    const live = await provider.getCategories("live");
+    const vod = await provider.getCategories("vod");
+    const series = await provider.getCategories("series");
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(live).toHaveLength(1);
+    expect(live[0].type).toBe("live");
+    expect(vod[0].type).toBe("vod");
+    expect(series[0].type).toBe("series");
+  });
+
+  it("getStreams() returns one mock item per type without network", async () => {
+    const provider = makeProvider();
+    const fetchSpy = vi.spyOn(provider as any, "cachedFetch");
+
+    const items = await provider.getStreams("mock-1", "live");
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(items).toHaveLength(1);
+    expect(items[0].categoryId).toBe("mock-1");
+    expect(items[0].type).toBe("live");
+  });
+
+  it("getEPG() / getFullEPG() return empty arrays without network", async () => {
+    const provider = makeProvider();
+    const fetchSpy = vi.spyOn(provider as any, "fetchJson");
+
+    expect(await provider.getEPG("any")).toEqual([]);
+    expect(await provider.getFullEPG()).toEqual([]);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("getVODInfo() / getSeriesInfo() return minimal valid detail shapes", async () => {
+    const provider = makeProvider();
+    const fetchSpy = vi.spyOn(provider as any, "cachedFetch");
+
+    const vod = await provider.getVODInfo("42");
+    const series = await provider.getSeriesInfo("99");
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(vod.id).toBe("42");
+    expect(vod.type).toBe("vod");
+    expect(series.id).toBe("99");
+    expect(series.type).toBe("series");
+    expect(series.seasons).toEqual([]);
+  });
+});
