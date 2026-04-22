@@ -40,6 +40,20 @@ interface XtreamConfig {
 
 const USER_AGENT = "IPTV Smarters Pro/2.2.2.1";
 
+/**
+ * When XTREAM_MOCK=true (set in CI / E2E tests), every outbound provider call
+ * short-circuits to minimal canned fixtures instead of reaching out to a real
+ * Xtream Codes host. This keeps CI (which runs in a public repo) from leaking
+ * credentials or DoS-ing an upstream, and lets the login E2E complete the
+ * post-auth navigation without talking to anything external.
+ *
+ * Fixtures are intentionally minimal — enough for the frontend to render an
+ * empty-state live grid after login, not a full browse experience.
+ */
+function isMockMode(): boolean {
+  return process.env.XTREAM_MOCK === "true";
+}
+
 export class XtreamProvider extends BaseStreamProvider {
   readonly name = "xtream";
   private readonly baseUrl: string;
@@ -57,6 +71,11 @@ export class XtreamProvider extends BaseStreamProvider {
     this.password = xtreamConfig.password;
     this.baseUrl = `http://${this.host}:${this.port}`;
     this.apiUrl = `${this.baseUrl}/player_api.php`;
+    if (isMockMode()) {
+      console.log(
+        "[xtream] XTREAM_MOCK=true — outbound provider calls will return canned fixtures",
+      );
+    }
   }
 
   private buildApiUrl(action: string, extra?: Record<string, string>): string {
@@ -74,6 +93,16 @@ export class XtreamProvider extends BaseStreamProvider {
   }
 
   async authenticate(): Promise<AccountInfo> {
+    if (isMockMode()) {
+      return {
+        username: this.username,
+        maxConnections: 1,
+        activeConnections: 0,
+        status: "active",
+        isTrial: false,
+        allowedFormats: ["m3u8", "ts"],
+      };
+    }
     const url = `${this.apiUrl}?username=${encodeURIComponent(this.username)}&password=${encodeURIComponent(this.password)}`;
     const raw = await this.fetchJson<XtreamAuthResponse>(
       url,
@@ -83,6 +112,18 @@ export class XtreamProvider extends BaseStreamProvider {
   }
 
   async getCategories(type: ContentType): Promise<CatalogCategory[]> {
+    if (isMockMode()) {
+      return [
+        {
+          id: "mock-1",
+          name: `Mock ${type} category`,
+          parentId: null,
+          type,
+          count: 1,
+        },
+      ];
+    }
+
     const actionMap = {
       live: "get_live_categories",
       vod: "get_vod_categories",
@@ -110,6 +151,20 @@ export class XtreamProvider extends BaseStreamProvider {
     categoryId: string,
     type: ContentType,
   ): Promise<CatalogItem[]> {
+    if (isMockMode()) {
+      return [
+        {
+          id: `mock-${type}-1`,
+          name: `Mock ${type} item`,
+          type,
+          categoryId,
+          icon: null,
+          added: null,
+          isAdult: false,
+        },
+      ];
+    }
+
     const actionMap = {
       live: "get_live_streams",
       vod: "get_vod_streams",
@@ -153,6 +208,20 @@ export class XtreamProvider extends BaseStreamProvider {
   }
 
   async getSeriesInfo(seriesId: string): Promise<CatalogItemDetail> {
+    if (isMockMode()) {
+      return {
+        id: seriesId,
+        name: "Mock Series",
+        type: "series",
+        categoryId: "mock-1",
+        icon: null,
+        added: null,
+        isAdult: false,
+        plot: "Mock plot",
+        seasons: [],
+        episodes: {},
+      };
+    }
     const cacheKey = `${this.name}:series_info:${seriesId}`;
     const url = this.buildApiUrl("get_series_info", { series_id: seriesId });
     const raw = await this.cachedFetch<XtreamSeriesInfo>(
@@ -165,6 +234,18 @@ export class XtreamProvider extends BaseStreamProvider {
   }
 
   async getVODInfo(vodId: string): Promise<CatalogItemDetail> {
+    if (isMockMode()) {
+      return {
+        id: vodId,
+        name: "Mock VOD",
+        type: "vod",
+        categoryId: "mock-1",
+        icon: null,
+        added: null,
+        isAdult: false,
+        plot: "Mock plot",
+      };
+    }
     const cacheKey = `${this.name}:vod_info:${vodId}`;
     const url = this.buildApiUrl("get_vod_info", { vod_id: vodId });
     const raw = await this.cachedFetch<XtreamVODInfo>(
@@ -177,6 +258,9 @@ export class XtreamProvider extends BaseStreamProvider {
   }
 
   async getEPG(streamId: string): Promise<EPGEntry[]> {
+    if (isMockMode()) {
+      return [];
+    }
     const cacheKey = `${this.name}:epg:${streamId}`;
 
     const cached = cacheGet<{ epg_listings: XtreamEPGItem[] }>(cacheKey);
@@ -197,6 +281,9 @@ export class XtreamProvider extends BaseStreamProvider {
   }
 
   async getFullEPG(): Promise<EPGEntry[]> {
+    if (isMockMode()) {
+      return [];
+    }
     const cacheKey = `${this.name}:epg:full`;
 
     const cached = cacheGet<{ epg_listings: XtreamEPGItem[] }>(cacheKey);
