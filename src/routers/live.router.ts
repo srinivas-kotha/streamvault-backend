@@ -169,6 +169,73 @@ router.get(
   },
 );
 
+// GET /api/live/channels                — all live streams flattened across categories
+// GET /api/live/channels?categoryId=X   — streams for one category (same as /streams/:catId)
+//
+// The v3 frontend (src/api/live.ts fetchChannels / fetchChannelsByCategory)
+// calls /api/live/channels — this endpoint was missing from Phase 2 and
+// returned 501 via the events.router catchall after merge, so the Live
+// screen rendered "Can't load channels" on the deployed site.
+router.get(
+  "/channels",
+  authMiddleware,
+  async (req: Request, res: Response) => {
+    try {
+      const categoryId =
+        typeof req.query["categoryId"] === "string"
+          ? req.query["categoryId"]
+          : undefined;
+
+      if (categoryId) {
+        const streams = await getProvider().getStreams(categoryId, "live");
+        res.json(streams);
+        return;
+      }
+
+      // No filter → fetch categories then parallel-fetch all streams.
+      // Cached so repeat hits stay fast; TTL matches channel-list cache.
+      const cacheKey = "xtream:live:channels:all";
+      const cached = cacheGet<CatalogItem[]>(cacheKey);
+      if (cached) {
+        res.json(cached);
+        return;
+      }
+
+      const categories: CatalogCategory[] =
+        await getProvider().getCategories("live");
+
+      const streamResults = await Promise.allSettled(
+        categories.map((cat) => getProvider().getStreams(cat.id, "live")),
+      );
+
+      const all: CatalogItem[] = [];
+      const seen = new Set<string>();
+      for (const result of streamResults) {
+        if (result.status === "fulfilled") {
+          for (const stream of result.value) {
+            if (!seen.has(stream.id)) {
+              seen.add(stream.id);
+              all.push(stream);
+            }
+          }
+        }
+      }
+
+      cacheSet(cacheKey, all, CacheTTL.CHANNEL_LIST);
+      res.json(all);
+    } catch (err) {
+      console.error(
+        "[live] Failed to fetch channels:",
+        err instanceof Error ? err.message : err,
+      );
+      res.status(502).json({
+        error: "Bad Gateway",
+        message: "Failed to fetch live channels",
+      });
+    }
+  },
+);
+
 // GET /api/live/epg/bulk?streamIds=1,2,3
 // Must be defined BEFORE /epg/:streamId so Express doesn't treat "bulk" as a streamId
 router.get("/epg/bulk", authMiddleware, async (req: Request, res: Response) => {
