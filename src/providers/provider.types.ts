@@ -2,6 +2,9 @@
 
 export type ContentType = "live" | "vod" | "series";
 
+/** Language tag inferred from category name. Used for client-side language filtering. */
+export type InferredLang = "telugu" | "hindi" | "english" | "sports";
+
 export interface StreamProxyInfo {
   /** Full upstream URL to fetch */
   url: string;
@@ -36,6 +39,14 @@ export interface CatalogItem {
   rating?: string;
   genre?: string;
   year?: string;
+  /**
+   * Language inferred from the item's category name via server-side regex.
+   * Null when no pattern matches (e.g. "News", "Kids", "Action").
+   * Populated by the router layer where both category names and items are
+   * available. Replaces the client-side LANGUAGE_PATTERNS duplicate logic
+   * that was in LiveRoute / MoviesRoute / SeriesRoute (frontend issue #52).
+   */
+  inferredLang?: InferredLang | null;
 }
 
 export interface SeasonInfo {

@@ -8,6 +8,25 @@ import {
   bulkEpgQuerySchema,
 } from "../utils/validators";
 import { cacheGet, cacheSet, CacheTTL } from "../services/cache.service";
+import { inferLanguage } from "../services/language-inference.service";
+
+/**
+ * Annotate a list of CatalogItems with inferredLang using a category-name map.
+ * The map keys are category id strings; the values are the resolved names.
+ * Items whose categoryId is not in the map get inferredLang: null.
+ */
+function withInferredLang(
+  items: CatalogItem[],
+  catNameById: Map<string, string>,
+): CatalogItem[] {
+  return items.map((item) => {
+    const catName = catNameById.get(item.categoryId);
+    return {
+      ...item,
+      inferredLang: catName ? inferLanguage(catName) : null,
+    };
+  });
+}
 
 const router = Router();
 
@@ -72,6 +91,11 @@ router.get(
       const categories: CatalogCategory[] =
         await getProvider().getCategories("live");
 
+      // Build category name map for inferredLang annotation
+      const catNameById = new Map<string, string>(
+        categories.map((c) => [c.id, c.name]),
+      );
+
       // 2. Filter to Telugu/Indian categories
       const teluguCats = categories.filter((cat) => isTeluguCategory(cat.name));
 
@@ -101,8 +125,8 @@ router.get(
         .sort((a, b) => a.rank - b.rank)
         .map((entry) => entry.stream);
 
-      // Take top 20 priority channels
-      const featured = priorityStreams.slice(0, 20);
+      // Take top 20 priority channels; annotate with inferredLang
+      const featured = withInferredLang(priorityStreams.slice(0, 20), catNameById);
 
       cacheSet(cacheKey, featured, CacheTTL.CHANNEL_LIST);
       res.json(featured);
@@ -154,8 +178,15 @@ router.get(
         return;
       }
 
-      const streams = await getProvider().getStreams(parsed.data.catId, "live");
-      res.json(streams);
+      // Fetch categories and streams in parallel; categories needed for inferredLang.
+      const [categories, streams] = await Promise.all([
+        getProvider().getCategories("live"),
+        getProvider().getStreams(parsed.data.catId, "live"),
+      ]);
+      const catNameById = new Map<string, string>(
+        categories.map((c) => [c.id, c.name]),
+      );
+      res.json(withInferredLang(streams, catNameById));
     } catch (err) {
       console.error(
         "[live] Failed to fetch streams:",
@@ -187,8 +218,15 @@ router.get(
           : undefined;
 
       if (categoryId) {
-        const streams = await getProvider().getStreams(categoryId, "live");
-        res.json(streams);
+        // Single-category path: fetch categories for name lookup + streams in parallel.
+        const [categories, streams] = await Promise.all([
+          getProvider().getCategories("live"),
+          getProvider().getStreams(categoryId, "live"),
+        ]);
+        const catNameById = new Map<string, string>(
+          categories.map((c) => [c.id, c.name]),
+        );
+        res.json(withInferredLang(streams, catNameById));
         return;
       }
 
@@ -203,6 +241,10 @@ router.get(
 
       const categories: CatalogCategory[] =
         await getProvider().getCategories("live");
+
+      const catNameById = new Map<string, string>(
+        categories.map((c) => [c.id, c.name]),
+      );
 
       const streamResults = await Promise.allSettled(
         categories.map((cat) => getProvider().getStreams(cat.id, "live")),
@@ -221,8 +263,10 @@ router.get(
         }
       }
 
-      cacheSet(cacheKey, all, CacheTTL.CHANNEL_LIST);
-      res.json(all);
+      // Annotate all channels with inferredLang before caching
+      const annotated = withInferredLang(all, catNameById);
+      cacheSet(cacheKey, annotated, CacheTTL.CHANNEL_LIST);
+      res.json(annotated);
     } catch (err) {
       console.error(
         "[live] Failed to fetch channels:",

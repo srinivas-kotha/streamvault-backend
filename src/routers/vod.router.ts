@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { authMiddleware } from '../middleware/auth';
 import { getProvider } from '../providers';
 import { categoryIdSchema, vodIdSchema } from '../utils/validators';
+import { inferLanguage } from '../services/language-inference.service';
 
 const router = Router();
 
@@ -25,8 +26,19 @@ router.get('/streams/:catId', authMiddleware, async (req: Request, res: Response
       return;
     }
 
-    const streams = await getProvider().getStreams(parsed.data.catId, 'vod');
-    res.json(streams);
+    // Fetch categories and streams in parallel; categories needed for inferredLang.
+    const [categories, streams] = await Promise.all([
+      getProvider().getCategories('vod'),
+      getProvider().getStreams(parsed.data.catId, 'vod'),
+    ]);
+    const catNameById = new Map<string, string>(
+      categories.map((c) => [c.id, c.name]),
+    );
+    const annotated = streams.map((item) => {
+      const catName = catNameById.get(item.categoryId);
+      return { ...item, inferredLang: catName ? inferLanguage(catName) : null };
+    });
+    res.json(annotated);
   } catch (err) {
     console.error('[vod] Failed to fetch streams:', err instanceof Error ? err.message : err);
     res.status(502).json({ error: 'Bad Gateway', message: 'Failed to fetch VOD streams' });
