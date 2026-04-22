@@ -75,7 +75,12 @@ app.use("/api/auth", authRouter);
 app.use("/api/live", liveRouter);
 app.use("/api/vod", vodRouter);
 app.use("/api/series", seriesRouter);
-app.use("/api", searchRouter);
+// Search router defines router.get("/"), so mount at /api/search — not /api.
+// Previous mount at /api had the router match only /api/ itself; any
+// /api/search?q=... request fell through to the /api catch-all events
+// router and returned 501. Fixed 2026-04-22 after live-site smoke found
+// Search screen was empty.
+app.use("/api/search", searchRouter);
 app.use("/api/favorites", favoritesRouter);
 app.use("/api/history", historyRouter);
 app.use("/api/downloads", downloadsRouter);
