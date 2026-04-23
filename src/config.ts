@@ -25,7 +25,12 @@ export const config = {
     secret: requiredEnv('JWT_SECRET'),
     refreshSecret: requiredEnv('JWT_REFRESH_SECRET'),
     accessExpiresIn: '15m',
-    refreshExpiresIn: '90d',
+    // 60-day sliding session — tightened from 90d in Phase 1 of the v3 UX
+    // rebuild (streamvault-v3-frontend docs/ux/00-ia-navigation.md §7).
+    // Sliding is automatic: every successful /auth/refresh issues a fresh
+    // expires_at, so users stay logged in as long as they open the app
+    // at least once per 60 days.
+    refreshExpiresIn: '60d',
   },
 
   xtream: {
