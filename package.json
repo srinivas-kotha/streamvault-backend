@@ -11,7 +11,8 @@
     "test:watch": "vitest",
     "lint": "eslint src/",
     "type-check": "tsc --noEmit",
-    "seed:admin": "node dist/scripts/seed-admin.js"
+    "seed:admin": "node dist/scripts/seed-admin.js",
+    "migrate:provider-ids": "tsx src/scripts/migrate-provider-ids.ts"
   },
   "dependencies": {
     "async-mutex": "^0.5.0",
