@@ -25,6 +25,46 @@ const CONTENT_TYPE_MAP: Record<string, string> = {
   unknown: "application/octet-stream",
 };
 
+/**
+ * Detect Xtream's "channel offline" placeholder.
+ *
+ * When a live channel is offline upstream, the provider 302-redirects the
+ * `.ts` request to a static R2-hosted MPEG-TS file that loops a "FFmpeg
+ * Service" splash. Because fetch() follows redirects transparently, the
+ * backend would otherwise stream those 6 MB of placeholder bytes through
+ * FFmpeg as if the channel were healthy — the player shows the splash for a
+ * few seconds, then the connection closes and playback stalls. From the
+ * user's perspective, "the channel doesn't work and the output looks
+ * different from working channels."
+ *
+ * Three signals, any one is conclusive:
+ *  1. final URL host is the R2 placeholder bucket + `slappy/john_off` path
+ *  2. content-type is `text/vnd.trolltech.linguist` (provider's misconfigured
+ *     CT on the placeholder file — extremely distinctive)
+ *  3. content-length is exactly 6148352 (the placeholder file's byte count)
+ *
+ * Returning early with 503 lets the frontend render a clear "Channel offline"
+ * overlay instead of buffering on a TS loop.
+ */
+export function isOfflinePlaceholder(upstream: globalThis.Response): boolean {
+  const finalUrl = upstream.url || "";
+  if (
+    finalUrl.includes("cloudflarestorage.com") &&
+    finalUrl.includes("slappy/john_off")
+  ) {
+    return true;
+  }
+  const ct = upstream.headers.get("content-type") || "";
+  if (ct.toLowerCase().includes("trolltech.linguist")) {
+    return true;
+  }
+  const cl = upstream.headers.get("content-length");
+  if (cl === "6148352") {
+    return true;
+  }
+  return false;
+}
+
 /** Validate that an assembled URL targets one of the provider's allowed hosts (SSRF protection). */
 function isAllowedUpstreamUrl(
   url: string,
@@ -257,6 +297,21 @@ router.get(
         res.status(upstream.status).json({
           error: "Upstream Error",
           message: `Stream source returned ${upstream.status}`,
+        });
+        return;
+      }
+
+      // Offline-channel guard (live only). Provider 302-redirects offline
+      // channels to a 6 MB MPEG-TS placeholder; without this, FFmpeg would
+      // happily transcode the splash and the player would stall when the
+      // file ends. 503 + X-Stream-Status lets the frontend show a real
+      // "Channel offline" overlay.
+      if (isLive && isOfflinePlaceholder(upstream)) {
+        res.setHeader("X-Stream-Status", "offline");
+        res.status(503).json({
+          error: "Channel Offline",
+          message:
+            "This channel is offline upstream. Try a different channel.",
         });
         return;
       }
