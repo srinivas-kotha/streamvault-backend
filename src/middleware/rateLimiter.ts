@@ -43,3 +43,17 @@ export const streamLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+// Tight limit for player-driven mutation endpoints (audio-track ingest).
+// Players fire at most once per stream open; 10 req/min/IP comfortably
+// supports 10 concurrent users without inviting flooding.
+export const audioTrackLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  message: {
+    error: "Too Many Requests",
+    message: "Audio track report limit exceeded",
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});

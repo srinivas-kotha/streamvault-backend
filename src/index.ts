@@ -30,6 +30,8 @@ import accountRouter from "./routers/account.router";
 // CEO Dashboard routers
 import alertsRouter from "./routers/alerts.router";
 
+import audioTracksRouter from "./routers/audio-tracks.router";
+
 // Placeholder routers — Phase 2/3
 import streamRouter from "./routers/stream.router";
 import downloadsRouter from "./routers/downloads.router";
@@ -89,6 +91,7 @@ app.use("/api/settings", settingsRouter);
 app.use("/api", eventsRouter);
 app.use("/api/account", accountRouter);
 app.use("/api/alerts", alertsRouter);
+app.use("/api/audio-tracks", audioTracksRouter);
 
 // --- Error handler (must be last) ---
 app.use(errorHandler);
