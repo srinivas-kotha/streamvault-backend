@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { inferLanguage, LANGUAGE_PATTERNS } from "./language-inference.service";
+import {
+  inferLanguage,
+  isOttPlatform,
+  LANGUAGE_PATTERNS,
+  OTT_PLATFORM_PATTERNS,
+} from "./language-inference.service";
 
 // ─── LANGUAGE_PATTERNS shape ─────────────────────────────────────────────────
 
@@ -10,19 +15,41 @@ describe("LANGUAGE_PATTERNS", () => {
     );
   });
 
-  it("telugu patterns include 'telugu'", () => {
-    expect(LANGUAGE_PATTERNS.telugu).toContain("telugu");
+  it("telugu patterns include the broader Telugu-only channel set", () => {
+    expect(LANGUAGE_PATTERNS.telugu).toEqual(
+      expect.arrayContaining([
+        "telugu",
+        "aha",
+        "star maa",
+        "etv",
+        "gemini",
+        "maa tv",
+        "mahaa",
+      ]),
+    );
   });
 
-  it("hindi patterns include 'hindi' and 'bollywood'", () => {
-    expect(LANGUAGE_PATTERNS.hindi).toContain("hindi");
-    expect(LANGUAGE_PATTERNS.hindi).toContain("bollywood");
+  it("hindi patterns include the broader Hindi-only channel set", () => {
+    expect(LANGUAGE_PATTERNS.hindi).toEqual(
+      expect.arrayContaining([
+        "hindi",
+        "bollywood",
+        "colors tv",
+        "star plus",
+        "zee tv",
+        "sab tv",
+        "and tv",
+        "sony set",
+      ]),
+    );
   });
 
-  it("english patterns include 'english', 'netflix', 'amazon'", () => {
+  it("english patterns do NOT include OTT platforms (multi-lang)", () => {
+    expect(LANGUAGE_PATTERNS.english).not.toContain("netflix");
+    expect(LANGUAGE_PATTERNS.english).not.toContain("amazon");
     expect(LANGUAGE_PATTERNS.english).toContain("english");
-    expect(LANGUAGE_PATTERNS.english).toContain("netflix");
-    expect(LANGUAGE_PATTERNS.english).toContain("amazon");
+    expect(LANGUAGE_PATTERNS.english).toContain("hbo");
+    expect(LANGUAGE_PATTERNS.english).toContain("apple tv");
   });
 
   it("sports patterns include 'sports', 'cricket', 'football'", () => {
@@ -41,6 +68,18 @@ describe("inferLanguage — telugu", () => {
 
   it("matches case-insensitively 'TELUGU SERIALS'", () => {
     expect(inferLanguage("TELUGU SERIALS")).toBe("telugu");
+  });
+
+  it("matches Telugu-only OTT 'Aha Originals'", () => {
+    expect(inferLanguage("Aha Originals")).toBe("telugu");
+  });
+
+  it("matches Telugu broadcaster 'Star Maa Movies'", () => {
+    expect(inferLanguage("Star Maa Movies")).toBe("telugu");
+  });
+
+  it("matches Telugu broadcaster 'Gemini TV'", () => {
+    expect(inferLanguage("Gemini TV")).toBe("telugu");
   });
 
   it("matches mixed case 'Star Maa (Telugu)'", () => {
@@ -67,6 +106,18 @@ describe("inferLanguage — hindi", () => {
     expect(inferLanguage("Bollywood Classics")).toBe("hindi");
   });
 
+  it("matches Hindi broadcaster 'Colors TV HD'", () => {
+    expect(inferLanguage("Colors TV HD")).toBe("hindi");
+  });
+
+  it("matches Hindi broadcaster 'Star Plus'", () => {
+    expect(inferLanguage("Star Plus")).toBe("hindi");
+  });
+
+  it("matches Hindi broadcaster 'Zee TV'", () => {
+    expect(inferLanguage("Zee TV")).toBe("hindi");
+  });
+
   it("matches case-insensitively 'HINDI SERIALS'", () => {
     expect(inferLanguage("HINDI SERIALS")).toBe("hindi");
   });
@@ -79,16 +130,12 @@ describe("inferLanguage — english", () => {
     expect(inferLanguage("English Movies")).toBe("english");
   });
 
-  it("matches 'Netflix Originals'", () => {
-    expect(inferLanguage("Netflix Originals")).toBe("english");
-  });
-
-  it("matches 'Amazon Prime'", () => {
-    expect(inferLanguage("Amazon Prime")).toBe("english");
-  });
-
   it("matches 'HBO Series'", () => {
     expect(inferLanguage("HBO Series")).toBe("english");
+  });
+
+  it("matches 'Apple TV+'", () => {
+    expect(inferLanguage("Apple TV+")).toBe("english");
   });
 
   it("matches 'USA Channels'", () => {
@@ -140,6 +187,34 @@ describe("inferLanguage — sports", () => {
   });
 });
 
+// ─── inferLanguage — OTT platforms return null ───────────────────────────────
+
+describe("inferLanguage — multi-language OTT platforms return null", () => {
+  it("returns null for 'Netflix Originals' (mis-bucketed Telugu/Hindi as English before)", () => {
+    expect(inferLanguage("Netflix Originals")).toBeNull();
+  });
+
+  it("returns null for 'Amazon Prime Video'", () => {
+    expect(inferLanguage("Amazon Prime Video")).toBeNull();
+  });
+
+  it("returns null for 'Disney+ Hotstar'", () => {
+    expect(inferLanguage("Disney+ Hotstar")).toBeNull();
+  });
+
+  it("returns null for 'Zee5'", () => {
+    expect(inferLanguage("Zee5")).toBeNull();
+  });
+
+  it("returns null for 'SonyLIV'", () => {
+    expect(inferLanguage("SonyLIV")).toBeNull();
+  });
+
+  it("returns null for 'JioCinema'", () => {
+    expect(inferLanguage("JioCinema")).toBeNull();
+  });
+});
+
 // ─── inferLanguage — no match ────────────────────────────────────────────────
 
 describe("inferLanguage — no match returns null", () => {
@@ -168,8 +243,56 @@ describe("inferLanguage — no match returns null", () => {
 
 describe("inferLanguage — first-match ordering", () => {
   it("returns 'telugu' for a category that could match telugu before hindi", () => {
-    // 'Telugu Indian' matches telugu first, not hindi (because telugu is checked first)
     const result = inferLanguage("Telugu Indian Movies");
     expect(result).toBe("telugu");
+  });
+});
+
+// ─── isOttPlatform helper ────────────────────────────────────────────────────
+
+describe("isOttPlatform", () => {
+  it.each([
+    ["Netflix Originals"],
+    ["Amazon Prime Video"],
+    ["Disney+ Hotstar"],
+    ["Zee5"],
+    ["SonyLIV"],
+    ["Sony LIV"],
+    ["JioCinema"],
+    ["Jio Cinema"],
+    ["Voot Select"],
+    ["Prime Video"],
+    ["Alt Balaji"],
+    ["AltBalaji"],
+  ])("matches '%s' as an OTT platform", (name) => {
+    expect(isOttPlatform(name)).toBe(true);
+  });
+
+  it.each([
+    ["Telugu Movies"],
+    ["Star Plus"],
+    ["HBO Series"],
+    ["News"],
+    [""],
+  ])("returns false for non-OTT '%s'", (name) => {
+    expect(isOttPlatform(name)).toBe(false);
+  });
+});
+
+// ─── OTT_PLATFORM_PATTERNS shape ─────────────────────────────────────────────
+
+describe("OTT_PLATFORM_PATTERNS", () => {
+  it("includes the major Indian + global OTT platforms", () => {
+    expect(OTT_PLATFORM_PATTERNS).toEqual(
+      expect.arrayContaining([
+        "netflix",
+        "amazon",
+        "prime video",
+        "hotstar",
+        "zee5",
+        "sonyliv",
+        "jiocinema",
+      ]),
+    );
   });
 });
