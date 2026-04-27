@@ -10,6 +10,7 @@
 
 import { query } from "./db.service";
 import { cacheGet, cacheSet, CacheTTL } from "./cache.service";
+import { inferLanguage } from "./language-inference.service";
 import type { IStreamProvider, CatalogItem, ContentType } from "../providers";
 
 // Sync intervals (ms)
@@ -292,6 +293,7 @@ export async function searchCatalog(
       name: string;
       item_type: string;
       category_id: string;
+      category_name: string | null;
       icon: string | null;
       is_adult: boolean;
       rating: string | null;
@@ -299,14 +301,20 @@ export async function searchCatalog(
       year: string | null;
       added_at: string | null;
     }>(
-      `SELECT item_id, name, item_type, category_id, icon, is_adult, rating, genre, year, added_at
-       FROM sv_catalog
-       WHERE provider_id = $1
-         AND search_vector @@ to_tsquery('english', $2)
-         AND ($3::text IS NULL OR item_type = $3)
-         AND ($4::boolean IS FALSE OR is_adult = false)
-       ORDER BY ts_rank(search_vector, to_tsquery('english', $2)) DESC
-       LIMIT 150`,
+      `SELECT c.item_id, c.name, c.item_type, c.category_id,
+              cc.name AS category_name,
+              c.icon, c.is_adult, c.rating, c.genre, c.year, c.added_at
+         FROM sv_catalog c
+    LEFT JOIN sv_catalog_categories cc
+           ON cc.provider_id = c.provider_id
+          AND cc.category_id = c.category_id
+          AND cc.category_type = c.item_type
+        WHERE c.provider_id = $1
+          AND c.search_vector @@ to_tsquery('english', $2)
+          AND ($3::text IS NULL OR c.item_type = $3)
+          AND ($4::boolean IS FALSE OR c.is_adult = false)
+     ORDER BY ts_rank(c.search_vector, to_tsquery('english', $2)) DESC
+        LIMIT 150`,
       [provider.name, tsq, type ?? null, hideAdult],
     );
 
@@ -325,6 +333,7 @@ export async function searchCatalog(
         rating: row.rating ?? undefined,
         genre: row.genre ?? undefined,
         year: row.year ?? undefined,
+        inferredLang: row.category_name ? inferLanguage(row.category_name) : null,
       };
 
       const bucket = row.item_type as ContentType;
