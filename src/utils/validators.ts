@@ -88,3 +88,42 @@ export const bulkEpgQuerySchema = z.object({
         .max(50, "Maximum 50 stream IDs allowed"),
     ),
 });
+
+const audioContentTypeSchema = z.enum(["vod", "series-episode"]);
+
+export const audioTrackReportSchema = z.object({
+  content_type: audioContentTypeSchema,
+  tracks: z
+    .array(
+      z.object({
+        track_index: z.number().int().min(0).max(31),
+        language_code: z.string().max(8).optional(),
+        label: z.string().max(100).optional(),
+        codec: z.string().max(50).optional(),
+        channel_count: z
+          .number()
+          .int()
+          .refine((v) => [1, 2, 4, 6, 8].includes(v), {
+            message: "channel_count must be one of 1, 2, 4, 6, 8",
+          })
+          .optional(),
+        bitrate_bps: z.number().int().min(0).max(10_000_000).optional(),
+      }),
+    )
+    .min(1, "At least one track required")
+    .max(32, "At most 32 tracks per report"),
+});
+
+export const audioTracksBulkQuerySchema = z.object({
+  ids: z
+    .string()
+    .min(1)
+    .transform((val) => val.split(",").map((id) => id.trim()))
+    .pipe(
+      z
+        .array(z.string().regex(/^\d+$/, "Each stream ID must be numeric"))
+        .min(1, "At least one stream ID required")
+        .max(50, "Maximum 50 stream IDs allowed"),
+    ),
+  content_type: audioContentTypeSchema,
+});

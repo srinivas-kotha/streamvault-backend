@@ -76,3 +76,21 @@ export interface DbSetting {
   key: string;
   value: Record<string, unknown>;
 }
+
+export interface DbStreamAudioTrack {
+  id: number;
+  provider_id: string;
+  stream_id: string;
+  content_type: 'vod' | 'series-episode';
+  track_index: number;
+  language_code: string | null;
+  label: string | null;
+  codec: string | null;
+  channel_count: number | null;
+  bitrate_bps: number | null;
+  source: 'player' | 'ingest' | 'manual';
+  reporter_user_id: number | null;
+  report_count: number;
+  first_reported_at: Date;
+  last_reported_at: Date;
+}
