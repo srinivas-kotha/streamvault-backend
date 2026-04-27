@@ -300,6 +300,61 @@ describe("searchCatalog — in-memory fallback", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// buildPrefixTsQuery — token sanitization + :* per token
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("buildPrefixTsQuery", () => {
+  it("appends :* to a single token", async () => {
+    const { buildPrefixTsQuery } = await import("./catalog.service");
+    expect(buildPrefixTsQuery("vikram")).toBe("vikram:*");
+  });
+
+  it("AND-joins multiple tokens with :* per token", async () => {
+    const { buildPrefixTsQuery } = await import("./catalog.service");
+    expect(buildPrefixTsQuery("vikram 2022")).toBe("vikram:* & 2022:*");
+  });
+
+  it("lowercases tokens", async () => {
+    const { buildPrefixTsQuery } = await import("./catalog.service");
+    expect(buildPrefixTsQuery("VIKRAM Vedha")).toBe("vikram:* & vedha:*");
+  });
+
+  it("strips tsquery operators to prevent injection", async () => {
+    const { buildPrefixTsQuery } = await import("./catalog.service");
+    // & | ! ( ) : are tsquery operators — must be stripped
+    expect(buildPrefixTsQuery("vikram&hello")).toBe("vikramhello:*");
+    expect(buildPrefixTsQuery("a|b!c(d)")).toBe("abcd:*");
+  });
+
+  it("returns null for empty / all-symbol input", async () => {
+    const { buildPrefixTsQuery } = await import("./catalog.service");
+    expect(buildPrefixTsQuery("")).toBeNull();
+    expect(buildPrefixTsQuery("   ")).toBeNull();
+    expect(buildPrefixTsQuery("&|!()")).toBeNull();
+  });
+
+  it("preserves unicode word characters (Telugu, Hindi, Devanagari)", async () => {
+    const { buildPrefixTsQuery } = await import("./catalog.service");
+    expect(buildPrefixTsQuery("విక్రమ్")).toBe("విక్రమ్:*");
+    expect(buildPrefixTsQuery("बॉलीवुड")).toBe("बॉलीवुड:*");
+  });
+
+  it("caps token count at 8", async () => {
+    const { buildPrefixTsQuery } = await import("./catalog.service");
+    const result = buildPrefixTsQuery("a b c d e f g h i j k");
+    const tokens = result?.split(" & ") ?? [];
+    expect(tokens.length).toBe(8);
+  });
+
+  it("collapses internal whitespace", async () => {
+    const { buildPrefixTsQuery } = await import("./catalog.service");
+    expect(buildPrefixTsQuery("  vikram   vedha  ")).toBe(
+      "vikram:* & vedha:*",
+    );
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // getCatalogItems — cache + cold path
 // ─────────────────────────────────────────────────────────────────────────────
 
