@@ -3,6 +3,10 @@ import { Readable } from "node:stream";
 import { spawn, type ChildProcess } from "node:child_process";
 import { authMiddleware } from "../middleware/auth";
 import { getProvider } from "../providers";
+import {
+  getOrFetchVodRange,
+  releaseVodRange,
+} from "../services/vod-flight.service";
 
 const router = Router();
 
@@ -287,10 +291,30 @@ router.get(
         headers["Range"] = req.headers.range;
       }
 
-      const upstream = await fetch(streamInfo.url, {
-        headers,
-        signal: controller.signal,
-      });
+      // VOD/series go through single-flight dedup (vod-flight.service).
+      // Live MUST stay on the bare fetch path — sharing live streams via
+      // Response.clone() would corrupt the FFmpeg pipeline. See vod-flight.
+      let upstream: globalThis.Response;
+      if (isLive) {
+        upstream = await fetch(streamInfo.url, {
+          headers,
+          signal: controller.signal,
+        });
+      } else {
+        const range =
+          typeof req.headers.range === "string"
+            ? req.headers.range
+            : undefined;
+        const flight = await getOrFetchVodRange(
+          streamInfo.url,
+          streamInfo.headers,
+          range,
+        );
+        upstream = flight.response;
+        // Release on disconnect — refs drop to zero only when every
+        // subscriber has detached, then the upstream fetch is aborted.
+        req.on("close", () => releaseVodRange(flight.key));
+      }
       clearTimeout(timeout);
 
       if (!upstream.ok) {
