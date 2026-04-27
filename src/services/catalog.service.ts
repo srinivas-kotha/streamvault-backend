@@ -247,6 +247,27 @@ export interface SearchResults {
 }
 
 /**
+ * Build a `tsquery` expression with prefix-match per token.
+ *
+ * "vikram 2022" → "vikram:* & 2022:*"
+ *
+ * Each token is sanitized to alphanumerics + underscore — strips Postgres
+ * tsquery operators (`& | ! ( ) :`) so a malformed query can't construct
+ * a custom expression. Empty/all-symbol queries return null and the caller
+ * falls back to substring search.
+ */
+export function buildPrefixTsQuery(input: string): string | null {
+  const tokens = input
+    .toLowerCase()
+    .split(/\s+/)
+    .map((t) => t.replace(/[^\p{L}\p{N}\p{M}_]/gu, ""))
+    .filter((t) => t.length > 0)
+    .slice(0, 8); // cap — typical search is 1-3 tokens
+  if (tokens.length === 0) return null;
+  return tokens.map((t) => `${t}:*`).join(" & ");
+}
+
+/**
  * Search catalog using PostgreSQL full-text search.
  * Falls back to in-memory if DB is unavailable.
  */
@@ -259,6 +280,11 @@ export async function searchCatalog(
   const cacheKey = `catalog:search:${provider.name}:${query_text.toLowerCase().trim()}:${type ?? "all"}:${hideAdult}`;
   const cached = cacheGet<SearchResults>(cacheKey);
   if (cached) return cached;
+
+  const tsq = buildPrefixTsQuery(query_text);
+  if (tsq === null) {
+    return fallbackSearch(provider, query_text, type, hideAdult);
+  }
 
   try {
     const result = await query<{
@@ -276,12 +302,12 @@ export async function searchCatalog(
       `SELECT item_id, name, item_type, category_id, icon, is_adult, rating, genre, year, added_at
        FROM sv_catalog
        WHERE provider_id = $1
-         AND search_vector @@ plainto_tsquery('english', $2)
+         AND search_vector @@ to_tsquery('english', $2)
          AND ($3::text IS NULL OR item_type = $3)
          AND ($4::boolean IS FALSE OR is_adult = false)
-       ORDER BY ts_rank(search_vector, plainto_tsquery('english', $2)) DESC
+       ORDER BY ts_rank(search_vector, to_tsquery('english', $2)) DESC
        LIMIT 150`,
-      [provider.name, query_text, type ?? null, hideAdult],
+      [provider.name, tsq, type ?? null, hideAdult],
     );
 
     const empty: SearchResults = { live: [], vod: [], series: [] };
