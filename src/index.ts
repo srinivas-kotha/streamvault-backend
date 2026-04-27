@@ -88,10 +88,15 @@ app.use("/api/history", historyRouter);
 app.use("/api/downloads", downloadsRouter);
 app.use("/api/recordings", recordingsRouter);
 app.use("/api/settings", settingsRouter);
-app.use("/api", eventsRouter);
 app.use("/api/account", accountRouter);
 app.use("/api/alerts", alertsRouter);
 app.use("/api/audio-tracks", audioTracksRouter);
+// IMPORTANT: events router is the /api/* 404 catchall (`router.all('*')`).
+// It MUST be mounted LAST among /api routers — anything that follows it
+// will never receive requests because the catchall terminates with 404
+// before next() is called. Three routers (account, alerts, audio-tracks)
+// silently 404'd in prod because they had been mounted after this line.
+app.use("/api", eventsRouter);
 
 // --- Error handler (must be last) ---
 app.use(errorHandler);
