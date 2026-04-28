@@ -30,31 +30,43 @@ const CONTENT_TYPE_MAP: Record<string, string> = {
 };
 
 /**
- * Detect Xtream's "channel offline" placeholder.
+ * Detect Xtream's "channel/episode offline" placeholder.
  *
- * When a live channel is offline upstream, the provider 302-redirects the
- * `.ts` request to a static MPEG-TS file that loops an "FFmpeg Service"
+ * When a stream is unavailable upstream, the provider 302-redirects the
+ * `.ts`/`.mp4` request to a static file that loops an "FFmpeg Service"
  * splash. Because fetch() follows redirects transparently, the backend would
- * otherwise stream those placeholder bytes through FFmpeg as if the channel
- * were healthy — the player shows the splash for a few seconds, then the
- * connection closes and playback stalls.
+ * otherwise stream those placeholder bytes through FFmpeg/the pipe as if
+ * the stream were healthy — the player shows the splash for a few seconds,
+ * then the connection closes and playback stalls. From the user's
+ * perspective, the spinner spins forever.
  *
- * Signals (any one is conclusive — caller must already have gated on isLive):
- *  1. URL host pattern: original R2 bucket (`cloudflarestorage.com` +
- *     `slappy/john_off`) — kept for legacy traffic.
- *  2. content-type `text/vnd.trolltech.linguist` — distinctive misconfigured CT.
- *  3. ANY content-length on a live response. Real upstream live streams from
- *     this provider are unbounded chunked-transfer with no Content-Length;
- *     the placeholder is a finite static file. Spotted sizes in prod:
- *     6,148,352 (R2 bucket) and 9-13 MB range (162.249.127.41 nginx host —
- *     a different placeholder file). Generalising to "any content-length"
- *     covers both today's hosts and any future placeholder rotation without
- *     hard-coding sizes.
+ * 2026-04-28 sweep confirmed the same placeholder pattern hits VOD and
+ * series episodes — not just live channels (sample: Jagadhatri series 5468
+ * had 2/10 random episodes redirected to the Cloudflare IPv6 placeholder).
+ * So this check now applies to every stream type. The set of signals is
+ * tailored per-type — the content-length one is live-only because real VOD
+ * legitimately has Content-Length.
  *
- * Returning early with 503 lets the frontend render a clear "Channel offline"
- * overlay instead of buffering on a TS loop.
+ * Signals:
+ *  - URL host (any stream type): three known placeholder hosts spotted in
+ *    prod traffic. Real CDN edges (172.110.220.x, 195.211.191.x,
+ *    103.161.34.x, 181.233.124.x) are NOT in this list.
+ *      • cloudflarestorage.com + slappy/john_off — legacy R2 bucket
+ *      • 162.249.127.* — nginx placeholder edge for live channels
+ *      • [2606:4700:2ff9:* — Cloudflare IPv6 placeholder (live + series)
+ *  - Content-Type `text/vnd.trolltech.linguist` (any stream type) — the
+ *    placeholder file's distinctive misconfigured CT.
+ *  - LIVE only: any Content-Length header is offline by elimination —
+ *    real upstream live is always chunked. Real VOD/series legitimately
+ *    have Content-Length set, so we don't apply this to them.
+ *
+ * Returning early with 503 lets the frontend render a clear "offline"
+ * overlay instead of buffering on a placeholder loop.
  */
-export function isOfflinePlaceholder(upstream: globalThis.Response): boolean {
+export function isOfflinePlaceholder(
+  upstream: globalThis.Response,
+  isLive: boolean,
+): boolean {
   const finalUrl = upstream.url || "";
   if (
     finalUrl.includes("cloudflarestorage.com") &&
@@ -62,15 +74,21 @@ export function isOfflinePlaceholder(upstream: globalThis.Response): boolean {
   ) {
     return true;
   }
+  if (finalUrl.includes("162.249.127.")) {
+    return true;
+  }
+  if (finalUrl.includes("[2606:4700:2ff9:")) {
+    return true;
+  }
   const ct = upstream.headers.get("content-type") || "";
   if (ct.toLowerCase().includes("trolltech.linguist")) {
     return true;
   }
-  // Caller has already verified isLive. Any content-length on a live response
-  // is offline-placeholder by elimination — real live is always chunked.
-  const cl = upstream.headers.get("content-length");
-  if (cl !== null && cl !== "") {
-    return true;
+  if (isLive) {
+    const cl = upstream.headers.get("content-length");
+    if (cl !== null && cl !== "") {
+      return true;
+    }
   }
   return false;
 }
@@ -331,17 +349,20 @@ router.get(
         return;
       }
 
-      // Offline-channel guard (live only). Provider 302-redirects offline
-      // channels to a 6 MB MPEG-TS placeholder; without this, FFmpeg would
-      // happily transcode the splash and the player would stall when the
-      // file ends. 503 + X-Stream-Status lets the frontend show a real
-      // "Channel offline" overlay.
-      if (isLive && isOfflinePlaceholder(upstream)) {
+      // Offline guard. Provider redirects unavailable streams to an "FFmpeg
+      // Service" splash file regardless of stream type. Originally enforced
+      // for live only; 2026-04-28 traffic sample confirmed VOD/series episodes
+      // (e.g. Jagadhatri/5468) hit the same placeholder via Cloudflare IPv6,
+      // so the gate now applies to every type. 503 + X-Stream-Status lets the
+      // frontend show a clear "offline" overlay instead of spinning forever
+      // on a doomed pipe.
+      if (isOfflinePlaceholder(upstream, isLive)) {
         res.setHeader("X-Stream-Status", "offline");
         res.status(503).json({
-          error: "Channel Offline",
-          message:
-            "This channel is offline upstream. Try a different channel.",
+          error: isLive ? "Channel Offline" : "Stream Offline",
+          message: isLive
+            ? "This channel is offline upstream. Try a different channel."
+            : "This title is offline upstream. Try another episode or title.",
         });
         return;
       }
