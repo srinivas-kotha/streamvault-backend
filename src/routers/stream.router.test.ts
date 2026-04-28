@@ -47,7 +47,7 @@ describe("isOfflinePlaceholder", () => {
     ).toBe(true);
   });
 
-  it("flags exact 6148352 content-length alone", () => {
+  it("flags exact 6148352 content-length (legacy R2 placeholder)", () => {
     expect(
       isOfflinePlaceholder(
         fakeResponse({
@@ -59,7 +59,32 @@ describe("isOfflinePlaceholder", () => {
     ).toBe(true);
   });
 
-  it("does not flag a healthy MPEG-TS stream", () => {
+  it("flags 12878432 content-length (162.x nginx placeholder, observed 2026-04-28)", () => {
+    expect(
+      isOfflinePlaceholder(
+        fakeResponse({
+          url: "http://162.249.127.41/live/U/P/8.ts?token=foo",
+          contentType: "video/mp2t",
+          contentLength: "12878432",
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("flags any other finite content-length on a live response", () => {
+    // Caller already gates on isLive; real live is always chunked, so any
+    // length is a placeholder of some variant.
+    expect(
+      isOfflinePlaceholder(
+        fakeResponse({
+          contentType: "video/mp2t",
+          contentLength: "9781248",
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("does not flag a healthy MPEG-TS stream (chunked, no content-length)", () => {
     expect(
       isOfflinePlaceholder(
         fakeResponse({
@@ -78,12 +103,12 @@ describe("isOfflinePlaceholder", () => {
     ).toBe(false);
   });
 
-  it("does not flag content-length values close to but not equal to 6148352", () => {
+  it("does not flag empty-string content-length (treats as absent)", () => {
     expect(
       isOfflinePlaceholder(
         fakeResponse({
           contentType: "video/mp2t",
-          contentLength: "6148353",
+          contentLength: "",
         }),
       ),
     ).toBe(false);

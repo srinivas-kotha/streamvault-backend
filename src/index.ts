@@ -39,6 +39,20 @@ import recordingsRouter from "./routers/recordings.router";
 import settingsRouter from "./routers/settings.router";
 import eventsRouter from "./routers/events.router";
 
+// Last-resort safety net. Crashed the API process in prod 2026-04-28: an
+// AbortError from a stream-body pump escaped every local catch when a client
+// disconnected mid-stream. Per-call defenses live in vod-flight.service +
+// stream.router, but Node's default unhandled-rejection handler is "exit
+// process" — log and continue instead so a single rogue request can't take
+// the whole API down for the catalog-resync window (~90s).
+process.on("unhandledRejection", (reason) => {
+  const msg =
+    reason instanceof Error
+      ? `${reason.name}: ${reason.message}`
+      : String(reason);
+  console.error("[unhandledRejection]", msg);
+});
+
 const app = express();
 
 // Trust first proxy (Nginx Proxy Manager) — fixes ERR_ERL_UNEXPECTED_X_FORWARDED_FOR
