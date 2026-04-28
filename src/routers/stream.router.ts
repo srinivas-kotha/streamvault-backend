@@ -33,19 +33,23 @@ const CONTENT_TYPE_MAP: Record<string, string> = {
  * Detect Xtream's "channel offline" placeholder.
  *
  * When a live channel is offline upstream, the provider 302-redirects the
- * `.ts` request to a static R2-hosted MPEG-TS file that loops a "FFmpeg
- * Service" splash. Because fetch() follows redirects transparently, the
- * backend would otherwise stream those 6 MB of placeholder bytes through
- * FFmpeg as if the channel were healthy — the player shows the splash for a
- * few seconds, then the connection closes and playback stalls. From the
- * user's perspective, "the channel doesn't work and the output looks
- * different from working channels."
+ * `.ts` request to a static MPEG-TS file that loops an "FFmpeg Service"
+ * splash. Because fetch() follows redirects transparently, the backend would
+ * otherwise stream those placeholder bytes through FFmpeg as if the channel
+ * were healthy — the player shows the splash for a few seconds, then the
+ * connection closes and playback stalls.
  *
- * Three signals, any one is conclusive:
- *  1. final URL host is the R2 placeholder bucket + `slappy/john_off` path
- *  2. content-type is `text/vnd.trolltech.linguist` (provider's misconfigured
- *     CT on the placeholder file — extremely distinctive)
- *  3. content-length is exactly 6148352 (the placeholder file's byte count)
+ * Signals (any one is conclusive — caller must already have gated on isLive):
+ *  1. URL host pattern: original R2 bucket (`cloudflarestorage.com` +
+ *     `slappy/john_off`) — kept for legacy traffic.
+ *  2. content-type `text/vnd.trolltech.linguist` — distinctive misconfigured CT.
+ *  3. ANY content-length on a live response. Real upstream live streams from
+ *     this provider are unbounded chunked-transfer with no Content-Length;
+ *     the placeholder is a finite static file. Spotted sizes in prod:
+ *     6,148,352 (R2 bucket) and 9-13 MB range (162.249.127.41 nginx host —
+ *     a different placeholder file). Generalising to "any content-length"
+ *     covers both today's hosts and any future placeholder rotation without
+ *     hard-coding sizes.
  *
  * Returning early with 503 lets the frontend render a clear "Channel offline"
  * overlay instead of buffering on a TS loop.
@@ -62,8 +66,10 @@ export function isOfflinePlaceholder(upstream: globalThis.Response): boolean {
   if (ct.toLowerCase().includes("trolltech.linguist")) {
     return true;
   }
+  // Caller has already verified isLive. Any content-length on a live response
+  // is offline-placeholder by elimination — real live is always chunked.
   const cl = upstream.headers.get("content-length");
-  if (cl === "6148352") {
+  if (cl !== null && cl !== "") {
     return true;
   }
   return false;

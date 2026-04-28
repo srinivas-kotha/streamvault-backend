@@ -104,13 +104,28 @@ export async function getOrFetchVodRange(
  * zero, abort the upstream fetch and remove the entry.
  *
  * Safe to call on a key that has already been evicted — silently no-ops.
+ *
+ * Crash-prevention: aborting an in-flight or just-resolved fetch can cause
+ * undici to surface a deferred AbortError on the response body's internal
+ * pump (the `.finally().catch()` chain in `getOrFetchVodRange` only catches
+ * rejection of the headers promise, not body-stream rejections). Pre-attach
+ * a no-op rejection handler before triggering the abort so any deferred
+ * rejection stays attached and never reaches the Node unhandled-rejection
+ * handler. Repro: VOD/series request lands, response handed to the express
+ * pipe, client navigates back before the body finishes streaming. Crashed
+ * the API process in prod 2026-04-28.
  */
 export function releaseVodRange(key: string): void {
   const entry = inFlight.get(key);
   if (!entry) return;
   entry.refs -= 1;
   if (entry.refs <= 0) {
-    entry.controller.abort();
+    entry.promise.catch(() => {});
+    try {
+      entry.controller.abort();
+    } catch {
+      /* AbortController.abort never throws; defensive no-op */
+    }
     inFlight.delete(key);
   }
 }
