@@ -25,10 +25,14 @@ CREATE TABLE IF NOT EXISTS sv_feature_flags (
   value       JSONB         NOT NULL DEFAULT 'false'::jsonb,
   description TEXT,
   updated_at  TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
-  updated_by  TEXT          NOT NULL DEFAULT 'system',
-  CONSTRAINT sv_feature_flags_unique_key_scope
-    UNIQUE (key, scope, COALESCE(scope_id, ''))
+  updated_by  TEXT          NOT NULL DEFAULT 'system'
 );
+
+-- Postgres does NOT allow expression-based UNIQUE inside a table-level
+-- constraint, so we use a UNIQUE INDEX instead. The COALESCE expression
+-- normalises NULL scope_id to '' so global rows have a deterministic key.
+CREATE UNIQUE INDEX IF NOT EXISTS sv_feature_flags_unique_key_scope
+  ON sv_feature_flags (key, scope, COALESCE(scope_id, ''));
 
 CREATE INDEX IF NOT EXISTS idx_sv_ff_key_scope ON sv_feature_flags (key, scope);
 CREATE INDEX IF NOT EXISTS idx_sv_ff_scope_id  ON sv_feature_flags (scope_id)
@@ -45,4 +49,4 @@ INSERT INTO sv_feature_flags (key, scope, value, description) VALUES
    'Enables desktop responsive layout + mouse/keyboard gesture surfaces.'),
   ('adaptive.player.tap_toggle', 'global', 'false'::jsonb,
    'Single-tap on mobile player toggles control visibility (Phase 1 only behavior change).')
-ON CONFLICT ON CONSTRAINT sv_feature_flags_unique_key_scope DO NOTHING;
+ON CONFLICT (key, scope, COALESCE(scope_id, '')) DO NOTHING;

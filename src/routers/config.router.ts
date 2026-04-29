@@ -8,6 +8,17 @@ import {
 
 const router = Router();
 
+// Authoritative client cache TTL in seconds (master plan A13). The FE
+// honors this when caching the response in localStorage. Server-driven so
+// we can shorten it from a future config change without a FE deploy.
+const FLAG_CLIENT_TTL_SECONDS = 5;
+
+// Helper: ensure error responses are also marked no-store. A proxy that
+// caches a 500 makes failures look persistent after recovery (F3).
+function setNoStore(res: Response): void {
+  res.set("Cache-Control", "no-store");
+}
+
 // Soft-auth: read the access_token cookie if present, attach req.user, but
 // NEVER 401. The flags endpoint must serve global defaults to unauthed
 // callers (e.g. landing page before login) so the FE can render correctly.
@@ -34,13 +45,14 @@ router.get(
   "/flags",
   softAuthMiddleware,
   async (req: Request, res: Response) => {
+    setNoStore(res);
     try {
       const userId = req.user?.userId && req.user.userId > 0 ? req.user.userId : undefined;
       const flags = await getMergedFlags(userId);
-      res.set("Cache-Control", "no-store");
       res.json({
         flags,
         scope: userId ? "user" : "global",
+        ttl_seconds: FLAG_CLIENT_TTL_SECONDS,
         fetchedAt: new Date().toISOString(),
       });
     } catch (err) {
@@ -62,6 +74,7 @@ router.post(
   "/flags/:key",
   softAuthMiddleware,
   async (req: Request, res: Response) => {
+    setNoStore(res);
     if (!req.user || req.user.userId !== 1) {
       res.status(403).json({ error: "Forbidden", message: "Admin only" });
       return;
@@ -97,7 +110,6 @@ router.post(
         scope_id,
         updated_by: `userId:${req.user.userId}`,
       });
-      res.set("Cache-Control", "no-store");
       res.status(204).end();
     } catch (err) {
       console.error(

@@ -40,6 +40,7 @@ describe("GET /api/config/flags", () => {
 
     expect(res.status).toBe(200);
     expect(res.body.scope).toBe("global");
+    expect(res.body.ttl_seconds).toBe(5);
     expect(res.body.flags).toEqual({
       "adaptive.player.tap_toggle": false,
       "adaptive.mobile.enabled": false,
@@ -97,6 +98,15 @@ describe("GET /api/config/flags", () => {
     expect(res.status).toBe(500);
     expect(res.body.error).toBe("Internal Server Error");
   });
+
+  it("sets Cache-Control: no-store on 500 responses too (F3)", async () => {
+    mockQuery.mockRejectedValueOnce(new Error("connection refused") as never);
+
+    const res = await request(app).get("/api/config/flags");
+
+    expect(res.status).toBe(500);
+    expect(res.headers["cache-control"]).toBe("no-store");
+  });
 });
 
 describe("POST /api/config/flags/:key", () => {
@@ -153,6 +163,7 @@ describe("POST /api/config/flags/:key", () => {
     expect(res.status).toBe(204);
     const [sql, params] = mockQuery.mock.calls[0];
     expect(sql).toContain("INSERT INTO sv_feature_flags");
+    expect(sql).toContain("ON CONFLICT (key, scope, COALESCE(scope_id, ''))");
     expect(params?.[0]).toBe("adaptive.player.tap_toggle");
     expect(params?.[1]).toBe("global");
     expect(params?.[3]).toBe("true");

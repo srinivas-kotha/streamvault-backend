@@ -64,7 +64,7 @@ export async function upsertFlag(args: {
   await query(
     `INSERT INTO sv_feature_flags (key, scope, scope_id, value, updated_by, updated_at)
      VALUES ($1, $2, $3, $4::jsonb, $5, NOW())
-     ON CONFLICT ON CONSTRAINT sv_feature_flags_unique_key_scope
+     ON CONFLICT (key, scope, COALESCE(scope_id, ''))
      DO UPDATE SET value = EXCLUDED.value,
                    updated_by = EXCLUDED.updated_by,
                    updated_at = NOW()`,
