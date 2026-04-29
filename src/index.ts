@@ -32,6 +32,9 @@ import alertsRouter from "./routers/alerts.router";
 
 import audioTracksRouter from "./routers/audio-tracks.router";
 
+// Adaptive responsive (Phase 1)
+import configRouter from "./routers/config.router";
+
 // Placeholder routers — Phase 2/3
 import streamRouter from "./routers/stream.router";
 import downloadsRouter from "./routers/downloads.router";
@@ -105,6 +108,7 @@ app.use("/api/settings", settingsRouter);
 app.use("/api/account", accountRouter);
 app.use("/api/alerts", alertsRouter);
 app.use("/api/audio-tracks", audioTracksRouter);
+app.use("/api/config", configRouter);
 // IMPORTANT: events router is the /api/* 404 catchall (`router.all('*')`).
 // It MUST be mounted LAST among /api routers — anything that follows it
 // will never receive requests because the catchall terminates with 404
