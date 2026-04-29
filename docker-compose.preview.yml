@@ -1,0 +1,97 @@
+# Preview URL stack for StreamVault.
+#
+# Brought up on PR validation; torn down after merge. Lives on the same VPS
+# as production but uses:
+#   - separate Postgres database `streamvault_preview` (NOT `streamvault`)
+#   - alt ports (BE 3011, FE 3016)
+#   - own Redis namespace (if Redis is added later)
+#   - resource limits (1G mem, 0.5 CPU per container) to avoid OOM-killing prod
+#
+# Operator brings up via:
+#   PR_NUMBER=42 FE_SHA=abc1234 BE_SHA=def5678 \
+#     bash ~/streamvault-backend/bin/streamvault-preview-up.sh
+#
+# Caddy / nginx-proxy-manager fronts these alt ports at
+# preview.streamvault.srinivaskotha.uk with HTTP Basic Auth.
+
+services:
+  streamvault-preview-api:
+    image: streamvault-api:preview-${BUILD_TAG:-local}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: streamvault-preview-api
+    restart: "no" # only runs during PR validation; tear down after
+    ports:
+      - "3011:3001"
+    environment:
+      NODE_ENV: production
+      DB_NAME: streamvault_preview
+      DB_HOST: ${DB_HOST:-host.docker.internal}
+      DB_PORT: ${DB_PORT:-5432}
+      DB_USER: ${POSTGRES_USER}
+      DB_PASSWORD: ${POSTGRES_PASSWORD}
+      CORS_ORIGIN: https://preview.streamvault.srinivaskotha.uk
+      # All other secrets passed via shell env (CI populates from secrets;
+      # local previews export them in the calling shell). NEVER commit
+      # secrets here.
+      JWT_SECRET: ${JWT_SECRET}
+      CSRF_SECRET: ${CSRF_SECRET}
+      XTREAM_HOST: ${XTREAM_HOST}
+      XTREAM_USER: ${XTREAM_USER}
+      XTREAM_PASS: ${XTREAM_PASS}
+    depends_on:
+      streamvault-preview-db-init:
+        condition: service_completed_successfully
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: "0.5"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:3001/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 6
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  streamvault-preview-frontend:
+    image: streamvault-frontend:preview-${BUILD_TAG:-local}
+    container_name: streamvault-preview-frontend
+    restart: "no"
+    ports:
+      - "3016:80"
+    environment:
+      VITE_API_BASE_URL: https://preview.streamvault.srinivaskotha.uk/api
+      VITE_DEPLOY_ID: preview-${BUILD_TAG:-local}
+    depends_on:
+      streamvault-preview-api:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: "0.25"
+
+  streamvault-preview-db-init:
+    image: postgres:15-alpine
+    container_name: streamvault-preview-db-init
+    restart: "no"
+    environment:
+      PGHOST: ${DB_HOST:-host.docker.internal}
+      PGPORT: ${DB_PORT:-5432}
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: postgres
+    volumes:
+      - ./postgres:/migrations:ro
+      - ./bin/preview-db-init.sh:/preview-db-init.sh:ro
+    entrypoint: ["bash", "/preview-db-init.sh"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+# Note: this stack is INTENTIONALLY isolated from production.
+# - No external named volumes (preview DB lives in postgres container, prod data dir untouched)
+# - Containers prefixed `streamvault-preview-*` so they cannot collide with prod names
+# - All ports are alt; no clash with prod's 3001 (BE) / 3006 (FE)

@@ -6,3 +6,4 @@ coverage/
 .DS_Store
 test-*.ts
 last-run.md
+.env.preview
