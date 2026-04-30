@@ -6,6 +6,12 @@ on:
     types: [completed]
     branches: [main]
 
+# Serialize prod deploys so two pushes can't stomp each other's snapshots
+# (per master plan R23 / grill #8).
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -14,41 +20,27 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Deploy to VPS
+      - name: Deploy via streamvault-deploy.sh
+        # New deploy path (PR-OPS-1): snapshot → deploy → smoke → auto-rollback.
+        # The script is idempotent and emits a manifest at /home/crawler/snapshots/.
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           timeout: 60s
-          command_timeout: 8m
+          command_timeout: 12m
+          envs: POSTGRES_USER,POSTGRES_DB
           script: |
+            set -euo pipefail
+            export POSTGRES_USER='${{ secrets.POSTGRES_USER }}'
+            export POSTGRES_DB='${{ secrets.POSTGRES_DB }}'
             cd ~/streamvault-backend && git pull origin main
-            cd ~/ai-orchestration && docker compose up -d --build streamvault-api
+            cd ~/streamvault-v3-frontend && git pull origin main
+            chmod +x ~/streamvault-backend/bin/*.sh ~/streamvault-backend/bin/lib/*.sh
+            bash ~/streamvault-backend/bin/streamvault-deploy.sh
 
-      - name: Health check
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_KEY }}
-          timeout: 60s
-          command_timeout: 8m
-          script: |
-            for i in $(seq 1 18); do
-              if curl -sf http://localhost:3001/health > /dev/null 2>&1; then
-                echo "Health check passed after $((i * 5))s"
-                exit 0
-              fi
-              echo "Waiting for health... attempt $i/18"
-              sleep 5
-            done
-            echo "Health check failed after 90s — rolling back"
-            cd ~/ai-orchestration && docker compose logs streamvault-api --tail 50
-            docker compose restart streamvault-api
-            exit 1
-
-      - name: Cleanup old images
+      - name: Cleanup unprotected images
         if: success()
         uses: appleboy/ssh-action@v1
         with:
@@ -57,4 +49,7 @@ jobs:
           key: ${{ secrets.SSH_KEY }}
           timeout: 60s
           command_timeout: 8m
-          script: docker image prune -f
+          # Only prune images with no streamvault.protect label. The deploy
+          # script tags last-N smoke-passed images so they survive prune.
+          script: |
+            docker image prune -f --filter "label!=streamvault.protect=true"

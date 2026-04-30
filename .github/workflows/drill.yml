@@ -1,0 +1,51 @@
+name: Rollback Drill
+
+# workflow_dispatch only — operator triggers from GitHub UI.
+# Runs the rollback drill protocol against production. Safe by design:
+# pg_restore touches only sv_* tables (n8n/Mem0/Kokilla untouched), no-op
+# commit changes no runtime behavior, and the drill always re-deploys HEAD
+# at the end.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Print steps only — do not run anything destructive"
+        required: false
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+      skip_drill_deploy:
+        description: "Skip the no-op deploy step (just rollback + verify + redeploy)"
+        required: false
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+jobs:
+  drill:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Run drill
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          timeout: 60s
+          command_timeout: 15m
+          script: |
+            set -euo pipefail
+            export DRY_RUN='${{ github.event.inputs.dry_run }}'
+            export SKIP_DRILL_DEPLOY='${{ github.event.inputs.skip_drill_deploy }}'
+            export POSTGRES_USER='${{ secrets.POSTGRES_USER }}'
+            export POSTGRES_DB='${{ secrets.POSTGRES_DB }}'
+            chmod +x ~/streamvault-backend/bin/*.sh ~/streamvault-backend/bin/lib/*.sh
+            bash ~/streamvault-backend/bin/streamvault-drill.sh
