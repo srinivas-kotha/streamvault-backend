@@ -132,9 +132,10 @@ echo "[snapshot] applying retention policy"
 keep_smoked_count=0
 keep_smoked_max=5
 for mf in $(ls -t "$SV_SNAPSHOTS"/*.manifest.json 2>/dev/null); do
-  id="$(jq -r '.deploy_id' "$mf")"
-  smoked="$(jq -r '.smoke_passed' "$mf")"
-  age_days="$(( ( $(date -u +%s) - $(date -u -d "$(jq -r '.created_at' "$mf")" +%s 2>/dev/null || echo 0) ) / 86400 ))"
+  # Skip manifests that are not valid JSON (e.g. from a previously-aborted deploy).
+  id="$(jq -r '.deploy_id' "$mf" 2>/dev/null)" || { echo "[snapshot] WARN: purging invalid manifest $mf"; rm -f "$mf"; continue; }
+  smoked="$(jq -r '.smoke_passed' "$mf" 2>/dev/null || echo 'false')"
+  age_days="$(( ( $(date -u +%s) - $(date -u -d "$(jq -r '.created_at' "$mf" 2>/dev/null || echo '1970-01-01T00:00:00Z')" +%s 2>/dev/null || echo 0) ) / 86400 ))"
 
   # Always keep < 14 days
   if (( age_days < 14 )); then continue; fi

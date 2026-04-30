@@ -68,9 +68,9 @@ manifest_latest_smoked() {
   local mf
   for mf in $(ls -t "$SV_SNAPSHOTS"/*.manifest.json 2>/dev/null); do
     local id
-    id="$(jq -r '.deploy_id' "$mf")"
+    id="$(jq -r '.deploy_id' "$mf" 2>/dev/null)" || continue
     [[ "$id" == "$exclude" ]] && continue
-    if [[ "$(jq -r '.smoke_passed' "$mf")" == "true" ]]; then
+    if [[ "$(jq -r '.smoke_passed' "$mf" 2>/dev/null || echo 'false')" == "true" ]]; then
       echo "$id"
       return 0
     fi
