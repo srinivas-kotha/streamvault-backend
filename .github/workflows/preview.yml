@@ -1,0 +1,75 @@
+name: Preview URL
+
+# Builds + deploys a preview stack for any PR labeled "preview" or any PR
+# touching the rollback/feature-flag/preview infrastructure.
+#
+# Comments the preview URL on the PR. The stack is torn down on PR close.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed, labeled]
+    branches: [main]
+
+concurrency:
+  group: preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    if: |
+      github.event.action != 'closed' && (
+        contains(github.event.pull_request.labels.*.name, 'preview') ||
+        startsWith(github.event.pull_request.head.ref, 'v3-adaptive/')
+      )
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Bring up preview stack
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          timeout: 120s
+          command_timeout: 15m
+          script: |
+            set -euo pipefail
+            export PR_NUMBER='${{ github.event.pull_request.number }}'
+            export FE_SHA='${{ github.event.pull_request.head.sha }}'
+            export BE_SHA='${{ github.event.pull_request.head.sha }}'
+            export POSTGRES_USER='${{ secrets.POSTGRES_USER }}'
+            export POSTGRES_PASSWORD='${{ secrets.POSTGRES_PASSWORD }}'
+            chmod +x ~/streamvault-backend/bin/*.sh
+            bash ~/streamvault-backend/bin/streamvault-preview-up.sh
+
+      - name: Comment preview URL on PR
+        uses: peter-evans/create-or-update-comment@v4
+        with:
+          issue-number: ${{ github.event.pull_request.number }}
+          body: |
+            🔍 Preview deployed: <https://preview.streamvault.srinivaskotha.uk>
+
+            (Basic Auth required; credentials in 1Password "StreamVault Preview")
+
+            Build tag: `pr-${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}`
+
+            Stack will be torn down on PR close.
+
+  teardown:
+    if: github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Tear down preview stack
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          timeout: 60s
+          command_timeout: 5m
+          script: |
+            chmod +x ~/streamvault-backend/bin/*.sh
+            bash ~/streamvault-backend/bin/streamvault-preview-down.sh
