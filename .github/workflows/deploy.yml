@@ -35,8 +35,8 @@ jobs:
             set -euo pipefail
             export POSTGRES_USER='${{ secrets.POSTGRES_USER }}'
             export POSTGRES_DB='${{ secrets.POSTGRES_DB }}'
-            cd ~/streamvault-backend && git pull --rebase origin main
-            cd ~/streamvault-v3-frontend && git pull --rebase origin main
+            cd ~/streamvault-backend && git checkout -- . && git pull --rebase origin main
+            cd ~/streamvault-v3-frontend && git checkout -- . && git pull --rebase origin main
             chmod +x ~/streamvault-backend/bin/*.sh ~/streamvault-backend/bin/lib/*.sh
             bash ~/streamvault-backend/bin/streamvault-deploy.sh
 
