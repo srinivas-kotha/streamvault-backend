@@ -69,12 +69,10 @@ echo "[rollback] step 2/7 — stop services"
 # Step 3: restore DB in a single transaction
 # IMPORTANT: sv_feature_flags is INTENTIONALLY NOT in the dump. We do NOT
 # touch the flags table on rollback — kill-switch flips survive.
+# NOTE: dump is in pg_dump --format=custom format (not plain gzip). pg_restore
+# handles the custom format + internal compression directly — no gunzip needed.
 echo "[rollback] step 3/7 — restore DB (transactional)"
-GUNZIPPED="$DUMP_FILE.uncompressed.tmp"
-trap 'rm -f "$GUNZIPPED"' EXIT
-gunzip -c "$DUMP_FILE" > "$GUNZIPPED" || fail "gunzip"
-
-docker cp "$GUNZIPPED" "$POSTGRES_CONTAINER:/tmp/restore.dump" || fail "docker cp dump"
+docker cp "$DUMP_FILE" "$POSTGRES_CONTAINER:/tmp/restore.dump" || fail "docker cp dump"
 
 docker exec "$POSTGRES_CONTAINER" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 <<'SQL' || fail "drop sv_* tables"
 DO $$
