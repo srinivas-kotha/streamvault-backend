@@ -91,8 +91,10 @@ fi
 # 4. Manifest
 FE_SHA="$(cd "$FE_REPO" && git rev-parse HEAD)"
 BE_SHA="$(cd "$BE_REPO" && git rev-parse HEAD)"
-FE_IMAGE_ID="$(docker inspect --format='{{.Id}}' "$FE_IMAGE" 2>/dev/null || echo 'absent')"
-BE_IMAGE_ID="$(docker inspect --format='{{.Id}}' "$BE_IMAGE" 2>/dev/null || echo 'absent')"
+FE_IMAGE_ID="$(docker image inspect "$FE_IMAGE" --format='{{.Id}}' 2>/dev/null | tr -d '[:space:]')"
+FE_IMAGE_ID="${FE_IMAGE_ID:-absent}"
+BE_IMAGE_ID="$(docker image inspect "$BE_IMAGE" --format='{{.Id}}' 2>/dev/null | tr -d '[:space:]')"
+BE_IMAGE_ID="${BE_IMAGE_ID:-absent}"
 
 cat > "$MANIFEST.tmp" <<JSON
 {
