@@ -56,7 +56,9 @@ MANIFEST="$SV_SNAPSHOTS/$DEPLOY_ID.manifest.json"
 echo "[snapshot] pg_dump sv_* (excl. sv_feature_flags) → $DUMP_FILE"
 docker exec "$POSTGRES_CONTAINER" pg_dump \
   -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
-  --table='sv_*' --exclude-table='sv_feature_flags' \
+  --table='sv_*' \
+  --exclude-table='sv_feature_flags' \
+  --exclude-table='sv_feature_flags_id_seq' \
   --format=custom -Z 9 \
   | tee "$DUMP_FILE.tmp" > /dev/null
 mv "$DUMP_FILE.tmp" "$DUMP_FILE"
