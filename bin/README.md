@@ -4,13 +4,13 @@ Single-handle atomic rollback for FE + BE + DB. No paid services.
 
 ## Scripts
 
-| Script | Purpose |
-|---|---|
-| `streamvault-snapshot.sh` | Capture coordinated snapshot of the running stack |
-| `streamvault-deploy.sh` | Snapshot → deploy → smoke → auto-rollback on smoke fail |
-| `streamvault-rollback.sh` | Restore a specific `deploy_id` atomically |
-| `streamvault-drill.sh` | Safe production drill: deploy no-op → rollback → verify → redeploy |
-| `lib/manifest.sh` | Manifest read/write/verify helpers |
+| Script                    | Purpose                                                            |
+| ------------------------- | ------------------------------------------------------------------ |
+| `streamvault-snapshot.sh` | Capture coordinated snapshot of the running stack                  |
+| `streamvault-deploy.sh`   | Snapshot → deploy → smoke → auto-rollback on smoke fail            |
+| `streamvault-rollback.sh` | Restore a specific `deploy_id` atomically                          |
+| `streamvault-drill.sh`    | Safe production drill: deploy no-op → rollback → verify → redeploy |
+| `lib/manifest.sh`         | Manifest read/write/verify helpers                                 |
 
 ## Deploy ID format
 
@@ -33,7 +33,7 @@ Example: `deploy-20260429170142-abc1234-def5678`. Second resolution + both repo 
 
 ## Rollback safety
 
-- DB restore is wrapped in a single transaction: drop sv_* tables (except feature_flags) + `pg_restore --single-transaction --exit-on-error`. Mid-restore failure leaves DB at pre-restore state.
+- DB restore is wrapped in a single transaction: drop sv\_\* tables (except feature_flags) + `pg_restore --single-transaction --exit-on-error`. Mid-restore failure leaves DB at pre-restore state.
 - `sv_feature_flags` is never touched by rollback. Kill-switches survive code reverts.
 - Idempotent: re-running `streamvault-rollback.sh <id>` is safe.
 - On any step failure: stop, print recovery instructions, exit non-zero. Does NOT leave the system half-rolled-back.
@@ -47,19 +47,20 @@ bash bin/streamvault-drill.sh
 ```
 
 Steps:
+
 1. No-op commit on BE
 2. Deploy (creates new manifest)
 3. Rollback to previous smoke_passed deploy
 4. Verify smoke endpoints
 5. Redeploy HEAD
 
-Safe in production: pg_restore touches only `sv_*` tables (n8n/Mem0/Kokilla untouched), no-op commit changes no runtime behavior.
+Safe in production: pg*restore touches only `sv*\*` tables (n8n/Mem0/Kokilla untouched), no-op commit changes no runtime behavior.
 
 ## Required environment
 
 ```bash
-POSTGRES_USER     # default: postgres
-POSTGRES_DB       # default: streamvault
+POSTGRES_USER     # default: postgres  (VPS: crawler_admin)
+POSTGRES_DB       # default: postgres  (VPS: n8n — sv_* tables live in the n8n Postgres instance)
 POSTGRES_CONTAINER  # default: postgres (Docker container name)
 FE_REPO           # default: /home/crawler/streamvault-v3-frontend
 BE_REPO           # default: /home/crawler/streamvault-backend
