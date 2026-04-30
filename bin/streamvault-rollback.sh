@@ -92,6 +92,7 @@ SQL
 
 docker exec "$POSTGRES_CONTAINER" pg_restore \
   --single-transaction --exit-on-error --no-owner \
+  --clean --if-exists \
   -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
   /tmp/restore.dump || fail "pg_restore"
 
