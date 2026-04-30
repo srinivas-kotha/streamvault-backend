@@ -92,9 +92,9 @@ fi
 echo "[snapshot] reading git SHAs"
 FE_SHA="$(cd "$FE_REPO" && git rev-parse HEAD 2>/dev/null)" || { echo "[snapshot] WARN: could not read FE SHA from $FE_REPO"; FE_SHA="unknown"; }
 BE_SHA="$(cd "$BE_REPO" && git rev-parse HEAD 2>/dev/null)" || { echo "[snapshot] WARN: could not read BE SHA from $BE_REPO"; BE_SHA="unknown"; }
-FE_IMAGE_ID="$(docker image inspect "$FE_IMAGE" --format='{{.Id}}' 2>/dev/null | tr -d '[:space:]')"
+FE_IMAGE_ID="$(docker image inspect "$FE_IMAGE" --format='{{.Id}}' 2>/dev/null | tr -d '[:space:]')" || true
 FE_IMAGE_ID="${FE_IMAGE_ID:-absent}"
-BE_IMAGE_ID="$(docker image inspect "$BE_IMAGE" --format='{{.Id}}' 2>/dev/null | tr -d '[:space:]')"
+BE_IMAGE_ID="$(docker image inspect "$BE_IMAGE" --format='{{.Id}}' 2>/dev/null | tr -d '[:space:]')" || true
 BE_IMAGE_ID="${BE_IMAGE_ID:-absent}"
 
 cat > "$MANIFEST.tmp" <<JSON
