@@ -1,4 +1,5 @@
 import jwt from "jsonwebtoken";
+import type { StringValue } from "ms";
 import crypto from "crypto";
 import { config } from "../config";
 import type { TokenPayload } from "../types/api.types";
@@ -9,14 +10,14 @@ import type { TokenPayload } from "../types/api.types";
 // hash → unique-constraint violation on sv_refresh_tokens.token_hash_key.
 export function signAccessToken(payload: TokenPayload): string {
   return jwt.sign(payload, config.jwt.secret, {
-    expiresIn: config.jwt.accessExpiresIn,
+    expiresIn: config.jwt.accessExpiresIn as StringValue,
     jwtid: crypto.randomUUID(),
   });
 }
 
 export function signRefreshToken(payload: TokenPayload): string {
   return jwt.sign(payload, config.jwt.refreshSecret, {
-    expiresIn: config.jwt.refreshExpiresIn,
+    expiresIn: config.jwt.refreshExpiresIn as StringValue,
     jwtid: crypto.randomUUID(),
   });
 }

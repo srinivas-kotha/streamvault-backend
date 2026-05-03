@@ -128,8 +128,8 @@ async function startServer(): Promise<void> {
     // Kill orphaned FFmpeg processes from previous run
     killAllFFmpeg();
 
-    // Initialize stream provider
-    const provider = initProvider();
+    // Initialize stream provider (config passed explicitly for testability)
+    const provider = initProvider(config);
 
     // Start Phase 3 background services
     startCatalogSync(provider);
