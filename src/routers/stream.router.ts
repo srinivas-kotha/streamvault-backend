@@ -294,18 +294,17 @@ router.get(
     }
 
     const streamType = type as StreamType;
-    // Sanitize ext to prevent path traversal / query injection on upstream URL
-    const ALLOWED_EXTENSIONS = new Set([
-      "ts",
-      "mp4",
-      "m3u8",
-      "mkv",
-      "avi",
-      "flv",
-    ]);
+    // Sanitize ext to prevent path traversal / query injection on upstream URL.
+    // Generic shape check — any 1-8 char lowercase alphanumeric extension is
+    // accepted (covers mp4, mkv, mp3, m3u8, webm, avi, flv, mov, ts, ogg, …).
+    // Restricting to alnum prevents "../", "?token=", and other URL-breaking
+    // characters from reaching the provider.
+    const SAFE_EXT_RE = /^[a-z0-9]{1,8}$/;
     const rawExt =
-      typeof req.query.ext === "string" ? req.query.ext : undefined;
-    const ext = rawExt && ALLOWED_EXTENSIONS.has(rawExt) ? rawExt : undefined;
+      typeof req.query.ext === "string"
+        ? req.query.ext.toLowerCase()
+        : undefined;
+    const ext = rawExt && SAFE_EXT_RE.test(rawExt) ? rawExt : undefined;
 
     // ── Phase 3: content_uid dispatch ────────────────────────────────────────
     // Resolve StreamInfo via the content-identity layer when:
@@ -330,9 +329,29 @@ router.get(
         }
         streamInfo = await resolveStreamUrl(mapRow.rows[0].content_uid, ext);
       } else {
-        // Legacy path (unchanged) — direct provider call
+        // Legacy path — direct provider call. Look up container_extension from
+        // sv_catalog when the caller didn't provide ?ext=, so .mkv/.webm/.avi
+        // titles don't fall through to the .mp4 default and 0-byte at upstream.
+        let resolvedExt: string | undefined = ext;
+        if (!resolvedExt) {
+          const catalogRow = await query<{
+            container_extension: string | null;
+          }>(
+            `SELECT raw_data->>'container_extension' AS container_extension
+               FROM sv_catalog
+              WHERE provider_id = $1 AND item_id = $2 AND item_type = $3
+              LIMIT 1`,
+            [ACTIVE_PROVIDER_ID, id, streamType],
+          );
+          const catalogExt = catalogRow.rows[0]?.container_extension
+            ?.trim()
+            .toLowerCase();
+          if (catalogExt && SAFE_EXT_RE.test(catalogExt)) {
+            resolvedExt = catalogExt;
+          }
+        }
         const provider = getProvider();
-        streamInfo = provider.getStreamInfo(id, streamType, ext);
+        streamInfo = provider.getStreamInfo(id, streamType, resolvedExt);
       }
     } catch (e) {
       if (e instanceof ContentDormant) {

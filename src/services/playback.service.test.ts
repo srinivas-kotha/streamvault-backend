@@ -129,6 +129,47 @@ describe("resolveStreamUrl", () => {
     expect(mockGetStreamInfo).toHaveBeenCalledWith("777", "vod", undefined);
   });
 
+  // ── container_extension from provider_map.raw_data ────────────────────────
+
+  it("uses container_extension from provider_map raw_data when caller provides no ext (regression: 42% mkv movies were 0-byte under .mp4 default)", async () => {
+    mockQuery
+      .mockResolvedValueOnce({
+        rows: [{ item_id: "741309", container_extension: "mkv" }],
+      })
+      .mockResolvedValueOnce({ rows: [{ content_type: "movie" }] });
+    mockGetStreamInfo.mockReturnValue(FAKE_STREAM_INFO);
+
+    await resolveStreamUrl("e158cd61b78b25c6");
+
+    expect(mockGetStreamInfo).toHaveBeenCalledWith("741309", "vod", "mkv");
+  });
+
+  it("caller-provided ext beats container_extension from raw_data", async () => {
+    mockQuery
+      .mockResolvedValueOnce({
+        rows: [{ item_id: "100", container_extension: "mkv" }],
+      })
+      .mockResolvedValueOnce({ rows: [{ content_type: "movie" }] });
+    mockGetStreamInfo.mockReturnValue(FAKE_STREAM_INFO);
+
+    await resolveStreamUrl("aaaa1111bbbb2222", "mp4");
+
+    expect(mockGetStreamInfo).toHaveBeenCalledWith("100", "vod", "mp4");
+  });
+
+  it("falls back to undefined ext when container_extension is null", async () => {
+    mockQuery
+      .mockResolvedValueOnce({
+        rows: [{ item_id: "200", container_extension: null }],
+      })
+      .mockResolvedValueOnce({ rows: [{ content_type: "movie" }] });
+    mockGetStreamInfo.mockReturnValue(FAKE_STREAM_INFO);
+
+    await resolveStreamUrl("bbbb2222cccc3333");
+
+    expect(mockGetStreamInfo).toHaveBeenCalledWith("200", "vod", undefined);
+  });
+
   // ── Path 2: master exists, no provider_map row → ContentDormant ───────────
 
   it("throws ContentDormant when master exists but no provider_map row for active provider", async () => {
