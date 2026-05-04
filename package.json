@@ -44,6 +44,7 @@
     "@types/pg": "^8.11.10",
     "@types/sax": "^1.2.7",
     "@types/supertest": "^7.2.0",
+    "@types/unidecode": "^1.1.0",
     "@typescript-eslint/eslint-plugin": "^7.18.0",
     "@typescript-eslint/parser": "^7.18.0",
     "eslint": "^8.57.0",

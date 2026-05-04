@@ -12,7 +12,12 @@
 import sax from "sax";
 import { query } from "./db.service";
 import { cacheGet, cacheSet } from "./cache.service";
+import { ACTIVE_PROVIDER_ID } from "../config";
 import type { IStreamProvider, EPGEntry } from "../providers";
+import {
+  recordEpgUidHit,
+  recordEpgUidMiss,
+} from "../telemetry/content-identity";
 
 const REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
 const XMLTV_URL = process.env.XMLTV_URL ?? "";
@@ -237,6 +242,52 @@ async function upsertEPGEntries(
   }
 }
 
+/**
+ * Phase 1: backfill content_uid on EPG rows by joining with sv_content_provider_map.
+ *
+ * For each EPG row where content_uid IS NULL (or stale), look up the channel's
+ * content_uid via sv_content_provider_map (provider_id = ACTIVE, item_id = channel_id)
+ * and set it. Single set-based UPDATE — no per-row N+1.
+ *
+ * Note: sv_epg uses `channel_id` (text), NOT `stream_id` (verified Phase 0 Task 0.5a).
+ */
+async function fillEpgContentUid(): Promise<void> {
+  try {
+    const result = await query<{ updated: string }>(
+      `WITH updated AS (
+         UPDATE sv_epg e
+            SET content_uid = pm.content_uid
+           FROM sv_content_provider_map pm
+          WHERE pm.provider_id = $1
+            AND pm.item_id     = e.channel_id
+            AND (e.content_uid IS NULL OR e.content_uid <> pm.content_uid)
+        RETURNING e.id
+       )
+       SELECT count(*)::text AS updated FROM updated`,
+      [ACTIVE_PROVIDER_ID],
+    );
+    const hits = parseInt(result.rows[0]?.updated ?? "0", 10);
+    if (hits > 0) recordEpgUidHit(hits);
+
+    // Snapshot how many rows still have NULL content_uid (potential misses)
+    const missesRes = await query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM sv_epg WHERE content_uid IS NULL`,
+    );
+    const misses = parseInt(missesRes.rows[0]?.count ?? "0", 10);
+    if (misses > 0) recordEpgUidMiss(misses);
+
+    console.log(
+      `[epg] content_uid backfill: ${hits} rows updated, ${misses} still NULL`,
+    );
+  } catch (err) {
+    // Non-fatal — EPG works fine without content_uid
+    console.warn(
+      "[epg] content_uid backfill failed:",
+      err instanceof Error ? err.message : err,
+    );
+  }
+}
+
 // ─────────────────────────────────────────────
 // Public query methods
 // ─────────────────────────────────────────────
@@ -403,6 +454,9 @@ async function refreshEPG(provider: IStreamProvider): Promise<void> {
         console.log(`[epg] Upserted ${xmltvEntries.length} entries from XMLTV`);
       }
     }
+
+    // Phase 1: backfill content_uid on EPG rows after upsert
+    await fillEpgContentUid();
   } catch (err) {
     console.error(
       "[epg] Refresh error:",

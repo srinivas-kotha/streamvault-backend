@@ -8,11 +8,27 @@
  *  - Search: PostgreSQL FTS (replaces O(n) in-memory filter)
  */
 
-import { query } from "./db.service";
+import { query, getClient } from "./db.service";
 import { cacheGet, cacheSet, CacheTTL } from "./cache.service";
 import { inferLanguage } from "./language-inference.service";
 import { ACTIVE_PROVIDER_ID } from "../config";
 import type { IStreamProvider, CatalogItem, ContentType } from "../providers";
+import {
+  normalize,
+  resolveOrCreateContentUid,
+  findNearDuplicates,
+} from "./content-identity.service";
+import {
+  recordSyncDurationSeconds,
+  recordItemsProcessed,
+  recordResolutionConfidence,
+  recordConflict,
+  recordNearDuplicate,
+  recordReviewQueueDepth,
+} from "../telemetry/content-identity";
+
+// Advisory lock key — content master write ('CMWT' as hex)
+const ADVISORY_LOCK_KEY = 0x434d5754;
 
 // Sync intervals (ms)
 const SYNC_INTERVAL_LIVE_MS = 2 * 60 * 60 * 1000; // 2 hours
@@ -150,6 +166,344 @@ export async function syncCatalog(
   } finally {
     state.running = false;
   }
+}
+
+// ─────────────────────────────────────────────
+// Phase 1 dual-write: provider → sv_content_master + sv_content_provider_map
+// ─────────────────────────────────────────────
+
+/**
+ * Sync one content type and dual-write to sv_content_master + sv_content_provider_map.
+ * Uses a session-level advisory lock to serialise against manual merge operations.
+ * Batches in chunks of 500 with per-chunk transactions.
+ *
+ * @param provider The active stream provider
+ * @param type Content type: "live" | "vod" | "series"
+ *             Note: provider uses "vod" internally; master stores it as "movie"
+ */
+async function syncContentType(
+  provider: IStreamProvider,
+  type: ContentType,
+): Promise<void> {
+  // Map provider type to master content_type (vod → movie)
+  const masterType = type === "vod" ? "movie" : type;
+
+  const items = await provider.getStreams("0", type);
+  if (!Array.isArray(items) || items.length === 0) return;
+
+  const syncStart = Date.now();
+  const client = await getClient();
+
+  try {
+    const lock = await client.query<{ acquired: boolean }>(
+      `SELECT pg_try_advisory_lock($1) AS acquired`,
+      [ADVISORY_LOCK_KEY],
+    );
+    if (!lock.rows[0]?.acquired) {
+      console.warn(
+        `[catalog] advisory lock busy — skipping ${type} dual-write this cycle`,
+      );
+      return;
+    }
+
+    const newMasterRows: Array<{
+      content_uid: string;
+      normalized_title: string;
+      content_type: string;
+    }> = [];
+
+    let processed = 0;
+    const confidenceCounts: Record<string, number> = {
+      high: 0,
+      medium: 0,
+      low: 0,
+    };
+    let conflictCount = 0;
+
+    // Batch in chunks of 500
+    for (let i = 0; i < items.length; i += 500) {
+      const chunk = items.slice(i, i + 500);
+      await client.query("BEGIN");
+      try {
+        for (const item of chunk) {
+          const rawData = (item.rawData ?? {}) as Record<string, unknown>;
+          const yearNum = item.year ? parseInt(item.year, 10) : null;
+
+          const resolved = await resolveOrCreateContentUid({
+            type:
+              masterType === "movie"
+                ? "movie"
+                : masterType === "series"
+                  ? "series"
+                  : "live",
+            title: item.name,
+            year: yearNum && !isNaN(yearNum) ? yearNum : null,
+            raw_data: rawData,
+          });
+          if (!resolved) continue;
+
+          // Upsert master row — merge external_ids via jsonb concatenation
+          await client.query(
+            `INSERT INTO sv_content_master
+              (content_uid, content_type, normalized_title, year, external_ids)
+             VALUES ($1, $2, $3, $4, $5::jsonb)
+             ON CONFLICT (content_uid) DO UPDATE SET
+               external_ids = sv_content_master.external_ids || EXCLUDED.external_ids,
+               updated_at = now()`,
+            [
+              resolved.content_uid,
+              masterType,
+              normalize(
+                item.name,
+                masterType === "movie"
+                  ? "movie"
+                  : masterType === "series"
+                    ? "series"
+                    : "live",
+              ),
+              yearNum && !isNaN(yearNum) ? yearNum : null,
+              JSON.stringify(resolved.external_ids),
+            ],
+          );
+
+          // Upsert provider mapping
+          await client.query(
+            `INSERT INTO sv_content_provider_map
+              (content_uid, provider_id, item_id, raw_data, confidence)
+             VALUES ($1, $2, $3, $4::jsonb, $5)
+             ON CONFLICT (content_uid, provider_id) DO UPDATE SET
+               item_id = EXCLUDED.item_id,
+               raw_data = EXCLUDED.raw_data,
+               confidence = EXCLUDED.confidence,
+               last_synced = now()`,
+            [
+              resolved.content_uid,
+              ACTIVE_PROVIDER_ID,
+              String(item.id),
+              JSON.stringify(rawData),
+              resolved.confidence,
+            ],
+          );
+
+          processed++;
+          confidenceCounts[resolved.confidence] =
+            (confidenceCounts[resolved.confidence] ?? 0) + 1;
+
+          if (resolved.isNew) {
+            newMasterRows.push({
+              content_uid: resolved.content_uid,
+              normalized_title: normalize(
+                item.name,
+                masterType === "movie"
+                  ? "movie"
+                  : masterType === "series"
+                    ? "series"
+                    : "live",
+              ),
+              content_type: masterType,
+            });
+          }
+
+          // Log conflict to review queue
+          if (resolved.conflict) {
+            conflictCount++;
+            await client.query(
+              `INSERT INTO sv_content_review_queue (uid_a, uid_b, reason)
+               VALUES ($1, $2, 'external_id_conflict')
+               ON CONFLICT DO NOTHING`,
+              [resolved.conflict.external_id_uid, resolved.conflict.title_uid],
+            );
+          }
+        }
+        await client.query("COMMIT");
+      } catch (err) {
+        await client.query("ROLLBACK");
+        throw err;
+      }
+    }
+
+    // Near-duplicate detection on new rows only (expensive O(n²) — keep scope small)
+    if (newMasterRows.length > 0) {
+      const nearDups = await findNearDuplicates(newMasterRows);
+      for (const pair of nearDups) {
+        await client.query(
+          `INSERT INTO sv_content_review_queue (uid_a, uid_b, reason)
+           VALUES ($1, $2, $3)
+           ON CONFLICT DO NOTHING`,
+          [pair.uid_a, pair.uid_b, pair.reason],
+        );
+        recordNearDuplicate(type);
+      }
+    }
+
+    // Emit telemetry
+    const durationSeconds = (Date.now() - syncStart) / 1000;
+    recordSyncDurationSeconds(type, durationSeconds);
+    recordItemsProcessed(type, processed);
+    for (const [conf, count] of Object.entries(confidenceCounts)) {
+      if (count > 0)
+        recordResolutionConfidence(
+          type,
+          conf as "high" | "medium" | "low",
+          count,
+        );
+    }
+    if (conflictCount > 0) recordConflict(type, conflictCount);
+
+    // Snapshot review queue depth
+    const depthResult = await query<{ count: string }>(
+      `SELECT count(*)::text AS count FROM sv_content_review_queue WHERE resolved_at IS NULL`,
+    );
+    recordReviewQueueDepth(parseInt(depthResult.rows[0]?.count ?? "0", 10));
+
+    console.log(
+      `[catalog] content-identity dual-write for ${type}: ${processed} items, ` +
+        `${newMasterRows.length} new, ` +
+        `${durationSeconds.toFixed(2)}s`,
+    );
+  } finally {
+    await client.query(`SELECT pg_advisory_unlock($1)`, [ADVISORY_LOCK_KEY]);
+    client.release();
+  }
+}
+
+/**
+ * Sync episode metadata.
+ * ORDERING INVARIANT: must run AFTER syncContentType("series") so parent show
+ * rows exist in sv_content_master.
+ *
+ * The Xtream Codes provider exposes episodes via getSeriesInfo(seriesId), not
+ * a top-level getEpisodes() call. Graceful degradation: if series info isn't
+ * available, log and skip — episodes are optional in Phase 1.
+ */
+async function syncEpisodes(provider: IStreamProvider): Promise<void> {
+  // Fetch all series entries from provider_map so we have content_uid + item_id
+  const seriesRows = await query<{ content_uid: string; item_id: string }>(
+    `SELECT content_uid, item_id
+     FROM sv_content_provider_map pm
+     JOIN sv_content_master m USING (content_uid)
+     WHERE pm.provider_id = $1 AND m.content_type = 'series'`,
+    [ACTIVE_PROVIDER_ID],
+  );
+
+  if (seriesRows.rows.length === 0) {
+    console.log("[catalog] syncEpisodes: no series rows found — skipping");
+    return;
+  }
+
+  let episodeCount = 0;
+
+  for (const row of seriesRows.rows) {
+    try {
+      const detail = await provider.getSeriesInfo(row.item_id);
+      if (!detail.episodes) continue;
+
+      const client = await getClient();
+      try {
+        const lock = await client.query<{ acquired: boolean }>(
+          `SELECT pg_try_advisory_lock($1) AS acquired`,
+          [ADVISORY_LOCK_KEY],
+        );
+        if (!lock.rows[0]?.acquired) continue;
+
+        // Flatten episodes from season map
+        const allEpisodes: Array<{
+          season_num: number;
+          episode_num: number;
+        }> = [];
+        for (const [season, eps] of Object.entries(detail.episodes)) {
+          const seasonNum = parseInt(season, 10);
+          if (isNaN(seasonNum)) continue;
+          for (const ep of eps) {
+            allEpisodes.push({
+              season_num: seasonNum,
+              episode_num: ep.episodeNumber,
+            });
+          }
+        }
+
+        for (let i = 0; i < allEpisodes.length; i += 500) {
+          const chunk = allEpisodes.slice(i, i + 500);
+          await client.query("BEGIN");
+          try {
+            for (const ep of chunk) {
+              const resolved = await resolveOrCreateContentUid({
+                type: "episode",
+                title: null,
+                raw_data: {},
+                parent_show_uid: row.content_uid,
+                season_num: ep.season_num,
+                episode_num: ep.episode_num,
+              });
+              if (!resolved) continue;
+
+              await client.query(
+                `INSERT INTO sv_content_master
+                  (content_uid, content_type, normalized_title, parent_show_uid, season_num, episode_num, external_ids)
+                 VALUES ($1, 'episode', '', $2, $3, $4, '{}'::jsonb)
+                 ON CONFLICT (content_uid) DO UPDATE SET
+                   updated_at = now()`,
+                [
+                  resolved.content_uid,
+                  row.content_uid,
+                  ep.season_num,
+                  ep.episode_num,
+                ],
+              );
+
+              await client.query(
+                `INSERT INTO sv_content_provider_map
+                  (content_uid, provider_id, item_id, raw_data, confidence)
+                 VALUES ($1, $2, $3, '{}'::jsonb, $4)
+                 ON CONFLICT (content_uid, provider_id) DO UPDATE SET
+                   last_synced = now()`,
+                [
+                  resolved.content_uid,
+                  ACTIVE_PROVIDER_ID,
+                  `${row.item_id}:S${ep.season_num}E${ep.episode_num}`,
+                  resolved.confidence,
+                ],
+              );
+
+              episodeCount++;
+            }
+            await client.query("COMMIT");
+          } catch (err) {
+            await client.query("ROLLBACK");
+            throw err;
+          }
+        }
+      } finally {
+        await client.query(`SELECT pg_advisory_unlock($1)`, [
+          ADVISORY_LOCK_KEY,
+        ]);
+        client.release();
+      }
+    } catch (err) {
+      // Graceful degradation: episode sync failure is non-fatal
+      console.warn(
+        `[catalog] syncEpisodes: skipping series ${row.item_id}:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+
+  console.log(
+    `[catalog] syncEpisodes complete: ${episodeCount} episodes processed`,
+  );
+}
+
+/**
+ * Full dual-write sync: all content types + episodes.
+ * Exported for direct invocation (e.g. from tests or admin endpoints).
+ */
+export async function syncProviderCatalog(
+  provider: IStreamProvider,
+): Promise<void> {
+  await syncContentType(provider, "live");
+  await syncContentType(provider, "vod");
+  await syncContentType(provider, "series");
+  await syncEpisodes(provider);
 }
 
 /**
