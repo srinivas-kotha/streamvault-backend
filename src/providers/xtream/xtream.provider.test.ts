@@ -338,9 +338,7 @@ describe("XtreamProvider.getCategories() — returns CatalogCategory[]", () => {
   });
 
   it("returns the correct full CatalogCategory shape", async () => {
-    spyOnCachedFetch(provider).mockResolvedValue([
-      rawCategories[0],
-    ]);
+    spyOnCachedFetch(provider).mockResolvedValue([rawCategories[0]]);
 
     const result = await provider.getCategories("live");
 
@@ -437,9 +435,7 @@ describe("XtreamProvider.getStreams() — live — returns CatalogItem[]", () =>
   });
 
   it("returns the correct full CatalogItem shape for live", async () => {
-    spyOnCachedFetch(provider).mockResolvedValue([
-      rawLiveStreams[0],
-    ]);
+    spyOnCachedFetch(provider).mockResolvedValue([rawLiveStreams[0]]);
 
     const result = await provider.getStreams("5", "live");
 
@@ -451,6 +447,7 @@ describe("XtreamProvider.getStreams() — live — returns CatalogItem[]", () =>
       icon: "https://example.com/cnn.png",
       added: "1698000000",
       isAdult: false,
+      rawData: rawLiveStreams[0] as unknown as Record<string, unknown>,
     });
   });
 });
@@ -500,9 +497,7 @@ describe("XtreamProvider.getStreams() — vod — returns CatalogItem[]", () => 
   });
 
   it("returns the correct full CatalogItem shape for VOD", async () => {
-    spyOnCachedFetch(provider).mockResolvedValue([
-      rawVODStreams[0],
-    ]);
+    spyOnCachedFetch(provider).mockResolvedValue([rawVODStreams[0]]);
 
     const result = await provider.getStreams("12", "vod");
 
@@ -515,6 +510,7 @@ describe("XtreamProvider.getStreams() — vod — returns CatalogItem[]", () => 
       added: "1700000000",
       isAdult: false,
       rating: "8.6",
+      rawData: rawVODStreams[0] as unknown as Record<string, unknown>,
     });
   });
 });
@@ -573,9 +569,7 @@ describe("XtreamProvider.getStreams() — series — returns CatalogItem[]", () 
   });
 
   it("returns the correct full CatalogItem shape for series", async () => {
-    spyOnCachedFetch(provider).mockResolvedValue([
-      rawSeriesItems[0],
-    ]);
+    spyOnCachedFetch(provider).mockResolvedValue([rawSeriesItems[0]]);
 
     const result = await provider.getStreams("7", "series");
 
@@ -590,6 +584,7 @@ describe("XtreamProvider.getStreams() — series — returns CatalogItem[]", () 
       rating: "9.5",
       genre: "Crime, Drama",
       year: "2008",
+      rawData: rawSeriesItems[0] as unknown as Record<string, unknown>,
     });
   });
 });
@@ -1001,9 +996,7 @@ describe("isAdult field accuracy across getStreams()", () => {
   });
 
   it("live: is_adult '0' → isAdult false", async () => {
-    spyOnCachedFetch(provider).mockResolvedValue([
-      rawLiveStreams[0],
-    ]);
+    spyOnCachedFetch(provider).mockResolvedValue([rawLiveStreams[0]]);
 
     const result = await provider.getStreams("5", "live");
 
@@ -1011,9 +1004,7 @@ describe("isAdult field accuracy across getStreams()", () => {
   });
 
   it("live: is_adult '1' → isAdult true", async () => {
-    spyOnCachedFetch(provider).mockResolvedValue([
-      rawLiveStreams[1],
-    ]);
+    spyOnCachedFetch(provider).mockResolvedValue([rawLiveStreams[1]]);
 
     const result = await provider.getStreams("5", "live");
 
@@ -1021,9 +1012,7 @@ describe("isAdult field accuracy across getStreams()", () => {
   });
 
   it("vod: is_adult '0' → isAdult false", async () => {
-    spyOnCachedFetch(provider).mockResolvedValue([
-      rawVODStreams[0],
-    ]);
+    spyOnCachedFetch(provider).mockResolvedValue([rawVODStreams[0]]);
 
     const result = await provider.getStreams("12", "vod");
 
@@ -1031,9 +1020,7 @@ describe("isAdult field accuracy across getStreams()", () => {
   });
 
   it("vod: is_adult '1' → isAdult true", async () => {
-    spyOnCachedFetch(provider).mockResolvedValue([
-      rawVODStreams[1],
-    ]);
+    spyOnCachedFetch(provider).mockResolvedValue([rawVODStreams[1]]);
 
     const result = await provider.getStreams("12", "vod");
 

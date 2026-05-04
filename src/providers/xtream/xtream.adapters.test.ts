@@ -269,6 +269,7 @@ describe("adaptLiveStream", () => {
       icon: "https://example.com/cnn.png",
       added: "1698000000",
       isAdult: false,
+      rawData: rawLiveStream,
     });
   });
 });
@@ -344,6 +345,7 @@ describe("adaptVODStream", () => {
       added: "1700000000",
       isAdult: false,
       rating: "8.6",
+      rawData: rawVODStream,
     });
   });
 });
@@ -421,6 +423,7 @@ describe("adaptSeriesItem", () => {
       genre: "Crime, Drama",
       rating: "9.5",
       year: "2008",
+      rawData: rawSeriesItem,
     });
   });
 });
