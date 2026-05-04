@@ -384,6 +384,11 @@ describe("stream router — content_uid routing", () => {
   });
 
   it("uses legacy path for numeric id when SV_USE_CONTENT_UID is off", async () => {
+    // Legacy path now does a sv_catalog lookup for container_extension before
+    // calling provider.getStreamInfo; mock that query to return null (no row),
+    // so the handler falls through with ext=undefined.
+    vi.mocked(dbQuery).mockResolvedValueOnce({ rows: [], rowCount: 0 });
+
     // Numeric id — should NOT call resolveStreamUrl. Reject upstream fetch
     // so the handler short-circuits before any pipe (avoids ffmpeg spawn on
     // CI runners without an ffmpeg binary, which would surface as a vitest
@@ -392,12 +397,26 @@ describe("stream router — content_uid routing", () => {
       .fn()
       .mockRejectedValueOnce(new Error("test-shortcircuit"));
 
-    // Use /vod/ (a VALID_TYPES entry — /movie/ is not) to avoid ffmpeg even
-    // if fetch resolves; flag is off (default) so legacy provider.getStreamInfo
-    // is called, then pipeUpstream is short-circuited by the rejected fetch.
     await request(app).get("/api/stream/vod/12345");
 
     // resolveStreamUrl NOT called
+    expect(mockResolveStreamUrl).not.toHaveBeenCalled();
+  });
+
+  it("legacy path picks up container_extension from sv_catalog (regression: 42% mkv movies)", async () => {
+    // sv_catalog returns mkv as container_extension
+    vi.mocked(dbQuery).mockResolvedValueOnce({
+      rows: [{ container_extension: "mkv" }],
+      rowCount: 1,
+    });
+
+    global.fetch = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("test-shortcircuit"));
+
+    await request(app).get("/api/stream/vod/741309");
+
+    // provider.getStreamInfo called with ext="mkv" (from catalog), not undefined
     expect(mockResolveStreamUrl).not.toHaveBeenCalled();
   });
 });

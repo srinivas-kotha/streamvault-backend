@@ -81,9 +81,16 @@ export async function resolveStreamUrl(
   uid: string,
   ext?: string,
 ): Promise<StreamInfo> {
-  // Step 1: look up the active provider mapping (item_id only)
-  const mapResult = await query<{ item_id: string }>(
-    `SELECT item_id
+  // Step 1: look up the active provider mapping. Pull container_extension out
+  // of raw_data so the URL extension matches what the provider stored (mkv,
+  // mp4, webm, …). Without this, ~42% of movies that are .mkv get a wrong
+  // .mp4 URL and the upstream returns 0-byte responses or 401s.
+  const mapResult = await query<{
+    item_id: string;
+    container_extension: string | null;
+  }>(
+    `SELECT item_id,
+            raw_data->>'container_extension' AS container_extension
        FROM sv_content_provider_map
       WHERE content_uid = $1
         AND provider_id = $2`,
@@ -93,14 +100,24 @@ export async function resolveStreamUrl(
   if (mapResult.rows.length > 0) {
     // Happy path: mapping found — fetch content_type from master, then call provider.
     // Master uses "movie/episode/series/live"; provider expects "vod/series/live".
-    const { item_id } = mapResult.rows[0]!;
+    const { item_id, container_extension } = mapResult.rows[0]!;
     const masterForType = await query<{ content_type: MasterContentType }>(
       `SELECT content_type FROM sv_content_master WHERE content_uid = $1`,
       [uid],
     );
     const masterType = masterForType.rows[0]?.content_type ?? "movie";
     const providerType = masterTypeToProviderType(masterType);
-    return getProvider().getStreamInfo(item_id, providerType, ext);
+    // Caller-provided ext wins; otherwise use what the provider indexed.
+    // Validate shape (1-8 lowercase alnum) to avoid path-injection from any
+    // future raw_data drift — provider has supplied mp4/mkv/webm/avi/flv/mov
+    // historically, but trust nothing arriving as a URL segment.
+    const cleanedFromMap = container_extension?.trim().toLowerCase();
+    const fromMap =
+      cleanedFromMap && /^[a-z0-9]{1,8}$/.test(cleanedFromMap)
+        ? cleanedFromMap
+        : undefined;
+    const resolvedExt = ext ?? fromMap;
+    return getProvider().getStreamInfo(item_id, providerType, resolvedExt);
   }
 
   // No mapping for active provider — check if master row exists at all
