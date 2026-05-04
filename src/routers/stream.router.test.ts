@@ -332,24 +332,23 @@ describe("stream router — content_uid routing", () => {
 
   it("routes to resolveStreamUrl when id matches isContentUid pattern", async () => {
     const fakeStream = {
-      url: "http://provider.example/live/u/p/1.ts",
-      format: "ts",
+      url: "http://provider.example/movie/u/p/1.mp4",
+      format: "mp4",
       headers: {},
       allowedHosts: [{ hostname: "provider.example", port: "80" }],
     };
     mockResolveStreamUrl.mockResolvedValueOnce(fakeStream);
 
-    // Mock fetch to avoid network call in test — return a minimal response
-    const fakeUpstreamResponse = {
-      ok: true,
-      status: 200,
-      url: "http://provider.example/live/u/p/1.ts",
-      headers: { get: () => null },
-      body: null,
-    };
-    global.fetch = vi.fn().mockResolvedValueOnce(fakeUpstreamResponse);
+    // Reject upstream fetch so the handler short-circuits before piping.
+    // We only assert that resolveStreamUrl was reached; the response body is irrelevant.
+    global.fetch = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("test-shortcircuit"));
 
-    await request(app).get("/api/stream/live/abcd1234abcd1234");
+    // Use /vod/ path (a VALID_TYPES entry, unlike /movie/) to avoid the
+    // ffmpeg spawn that fires on /live/ — VOD/series stream straight through
+    // pipeUpstream which is also short-circuited by the rejected fetch above.
+    await request(app).get("/api/stream/vod/abcd1234abcd1234");
 
     // resolveStreamUrl was called (not legacy provider.getStreamInfo)
     expect(mockResolveStreamUrl).toHaveBeenCalledWith(
@@ -385,18 +384,18 @@ describe("stream router — content_uid routing", () => {
   });
 
   it("uses legacy path for numeric id when SV_USE_CONTENT_UID is off", async () => {
-    // Numeric id — should NOT call resolveStreamUrl
-    const fakeUpstreamResponse = {
-      ok: true,
-      status: 200,
-      url: "http://provider.example/live/u/p/12345.ts",
-      headers: { get: () => null },
-      body: null,
-    };
-    global.fetch = vi.fn().mockResolvedValueOnce(fakeUpstreamResponse);
+    // Numeric id — should NOT call resolveStreamUrl. Reject upstream fetch
+    // so the handler short-circuits before any pipe (avoids ffmpeg spawn on
+    // CI runners without an ffmpeg binary, which would surface as a vitest
+    // unhandled-error and fail the job even though assertions pass).
+    global.fetch = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("test-shortcircuit"));
 
-    // flag is off (default)
-    await request(app).get("/api/stream/live/12345");
+    // Use /vod/ (a VALID_TYPES entry — /movie/ is not) to avoid ffmpeg even
+    // if fetch resolves; flag is off (default) so legacy provider.getStreamInfo
+    // is called, then pipeUpstream is short-circuited by the rejected fetch.
+    await request(app).get("/api/stream/vod/12345");
 
     // resolveStreamUrl NOT called
     expect(mockResolveStreamUrl).not.toHaveBeenCalled();
