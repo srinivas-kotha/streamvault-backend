@@ -1,5 +1,74 @@
-import { describe, it, expect } from "vitest";
-import { isOfflinePlaceholder } from "./stream.router";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { isOfflinePlaceholder, isContentUid } from "./stream.router";
+import request from "supertest";
+import express from "express";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Mocks for content_uid routing tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+vi.mock("../services/playback.service", () => ({
+  resolveStreamUrl: vi.fn(),
+  ContentNotFound: class ContentNotFound extends Error {
+    constructor(uid: string) {
+      super(`content_uid not in master: ${uid}`);
+      this.name = "ContentNotFound";
+    }
+  },
+  ContentDormant: class ContentDormant extends Error {
+    uid: string;
+    lastSeenProviderId?: string;
+    constructor(uid: string, lastSeenProviderId?: string) {
+      super(`content not on active provider: ${uid}`);
+      this.name = "ContentDormant";
+      this.uid = uid;
+      this.lastSeenProviderId = lastSeenProviderId;
+    }
+  },
+}));
+
+vi.mock("../services/db.service", () => ({
+  query: vi.fn(),
+}));
+
+vi.mock("../config", () => ({
+  ACTIVE_PROVIDER_ID: "xtream:8027e2a2",
+  config: {
+    xtream: { host: "localhost", port: 80, username: "test", password: "test" },
+  },
+}));
+
+vi.mock("../middleware/auth", () => ({
+  authMiddleware: (
+    _req: express.Request,
+    _res: express.Response,
+    next: express.NextFunction,
+  ) => next(),
+}));
+
+vi.mock("../providers", () => ({
+  getProvider: () => ({
+    getStreamInfo: vi.fn().mockReturnValue({
+      url: "http://provider.example/live/u/p/1234.ts",
+      format: "ts",
+      headers: {},
+      allowedHosts: [{ hostname: "provider.example", port: "80" }],
+    }),
+  }),
+}));
+
+vi.mock("../services/vod-flight.service", () => ({
+  getOrFetchVodRange: vi.fn(),
+  releaseVodRange: vi.fn(),
+}));
+
+// Import the router and mocked modules AFTER vi.mock declarations
+import streamRouter from "./stream.router";
+import { resolveStreamUrl } from "../services/playback.service";
+import { query as dbQuery } from "../services/db.service";
+
+const mockResolveStreamUrl = vi.mocked(resolveStreamUrl);
+vi.mocked(dbQuery); // imported for mock side-effect; not directly used in assertions
 
 function fakeResponse({
   url = "http://edge.example/live/u/p/1.ts",
@@ -16,9 +85,7 @@ function fakeResponse({
     url,
     headers: {
       get: (name: string) =>
-        headers[name.toLowerCase()] ??
-        headers[name] ??
-        null,
+        headers[name.toLowerCase()] ?? headers[name] ?? null,
     },
   } as unknown as globalThis.Response;
 }
@@ -207,5 +274,131 @@ describe("isOfflinePlaceholder", () => {
         ),
       ).toBe(false);
     });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// isContentUid discriminator
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("isContentUid", () => {
+  it("returns true for a 16-char lowercase hex string", () => {
+    expect(isContentUid("abcd1234abcd1234")).toBe(true);
+    expect(isContentUid("0000000000000000")).toBe(true);
+    expect(isContentUid("ffffffffffffffff")).toBe(true);
+  });
+
+  it("returns false for numeric stream IDs", () => {
+    expect(isContentUid("12345")).toBe(false);
+    expect(isContentUid("99999999")).toBe(false);
+  });
+
+  it("returns false for uppercase hex (content_uids are lowercase)", () => {
+    expect(isContentUid("ABCD1234ABCD1234")).toBe(false);
+  });
+
+  it("returns false for strings shorter or longer than 16 chars", () => {
+    expect(isContentUid("abcd1234abcd123")).toBe(false); // 15 chars
+    expect(isContentUid("abcd1234abcd12345")).toBe(false); // 17 chars
+  });
+
+  it("returns false for empty string", () => {
+    expect(isContentUid("")).toBe(false);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Stream router — content_uid routing with feature flag
+// ─────────────────────────────────────────────────────────────────────────────
+
+function makeStreamApp(): express.Express {
+  const app = express();
+  app.use(express.json());
+  app.use("/api/stream", streamRouter);
+  return app;
+}
+
+describe("stream router — content_uid routing", () => {
+  const app = makeStreamApp();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    delete process.env.SV_USE_CONTENT_UID;
+  });
+
+  afterEach(() => {
+    delete process.env.SV_USE_CONTENT_UID;
+  });
+
+  it("routes to resolveStreamUrl when id matches isContentUid pattern", async () => {
+    const fakeStream = {
+      url: "http://provider.example/live/u/p/1.ts",
+      format: "ts",
+      headers: {},
+      allowedHosts: [{ hostname: "provider.example", port: "80" }],
+    };
+    mockResolveStreamUrl.mockResolvedValueOnce(fakeStream);
+
+    // Mock fetch to avoid network call in test — return a minimal response
+    const fakeUpstreamResponse = {
+      ok: true,
+      status: 200,
+      url: "http://provider.example/live/u/p/1.ts",
+      headers: { get: () => null },
+      body: null,
+    };
+    global.fetch = vi.fn().mockResolvedValueOnce(fakeUpstreamResponse);
+
+    await request(app).get("/api/stream/live/abcd1234abcd1234");
+
+    // resolveStreamUrl was called (not legacy provider.getStreamInfo)
+    expect(mockResolveStreamUrl).toHaveBeenCalledWith(
+      "abcd1234abcd1234",
+      undefined,
+    );
+  });
+
+  it("returns 410 with DORMANT error when ContentDormant is thrown", async () => {
+    const { ContentDormant } = await import("../services/playback.service");
+    mockResolveStreamUrl.mockRejectedValueOnce(
+      new ContentDormant("abcd1234abcd1234", "xtream:old"),
+    );
+
+    const res = await request(app).get("/api/stream/live/abcd1234abcd1234");
+
+    expect(res.status).toBe(410);
+    expect(res.body.error).toBe("DORMANT");
+    expect(res.body.content_uid).toBe("abcd1234abcd1234");
+    expect(res.body.message).toBeTruthy();
+  });
+
+  it("returns 404 with NOT_FOUND error when ContentNotFound is thrown", async () => {
+    const { ContentNotFound } = await import("../services/playback.service");
+    mockResolveStreamUrl.mockRejectedValueOnce(
+      new ContentNotFound("deadbeef00000000"),
+    );
+
+    const res = await request(app).get("/api/stream/live/deadbeef00000000");
+
+    expect(res.status).toBe(404);
+    expect(res.body.error).toBe("NOT_FOUND");
+  });
+
+  it("uses legacy path for numeric id when SV_USE_CONTENT_UID is off", async () => {
+    // Numeric id — should NOT call resolveStreamUrl
+    const fakeUpstreamResponse = {
+      ok: true,
+      status: 200,
+      url: "http://provider.example/live/u/p/12345.ts",
+      headers: { get: () => null },
+      body: null,
+    };
+    global.fetch = vi.fn().mockResolvedValueOnce(fakeUpstreamResponse);
+
+    // flag is off (default)
+    await request(app).get("/api/stream/live/12345");
+
+    // resolveStreamUrl NOT called
+    expect(mockResolveStreamUrl).not.toHaveBeenCalled();
   });
 });

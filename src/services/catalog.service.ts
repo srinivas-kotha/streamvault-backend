@@ -667,6 +667,8 @@ export async function searchCatalog(
     return fallbackSearch(provider, query_text, type, hideAdult);
   }
 
+  const useContentUid = process.env.SV_USE_CONTENT_UID === "1";
+
   try {
     const result = await query<{
       item_id: string;
@@ -680,15 +682,24 @@ export async function searchCatalog(
       genre: string | null;
       year: string | null;
       added_at: string | null;
+      content_uid: string | null;
     }>(
       `SELECT c.item_id, c.name, c.item_type, c.category_id,
               cc.name AS category_name,
               c.icon, c.is_adult, c.rating, c.genre, c.year, c.added_at
+              ${useContentUid ? ", pm.content_uid" : ", NULL::text AS content_uid"}
          FROM sv_catalog c
     LEFT JOIN sv_catalog_categories cc
            ON cc.provider_id = c.provider_id
           AND cc.category_id = c.category_id
           AND cc.category_type = c.item_type
+    ${
+      useContentUid
+        ? `LEFT JOIN sv_content_provider_map pm
+           ON pm.provider_id = c.provider_id
+          AND pm.item_id = c.item_id`
+        : ""
+    }
         WHERE c.provider_id = $1
           AND c.search_vector @@ to_tsquery('english', $2)
           AND ($3::text IS NULL OR c.item_type = $3)
@@ -716,6 +727,7 @@ export async function searchCatalog(
         inferredLang: row.category_name
           ? inferLanguage(row.category_name)
           : null,
+        ...(useContentUid && { content_uid: row.content_uid }),
       };
 
       const bucket = row.item_type as ContentType;
