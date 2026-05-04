@@ -14,7 +14,8 @@
     "seed:admin": "node dist/scripts/seed-admin.js",
     "migrate:provider-ids": "tsx src/scripts/migrate-provider-ids.ts",
     "probe:external-ids": "tsx src/scripts/probes/probe-provider-external-ids.ts",
-    "migrate:provider-id-namespacing": "tsx src/scripts/migrations/apply-provider-id-namespacing.ts"
+    "migrate:provider-id-namespacing": "tsx src/scripts/migrations/apply-provider-id-namespacing.ts",
+    "rollback:provider-id-namespacing": "tsx src/scripts/migrations/rollback-provider-id-namespacing.ts"
   },
   "dependencies": {
     "async-mutex": "^0.5.0",
