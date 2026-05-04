@@ -15,7 +15,9 @@
     "migrate:provider-ids": "tsx src/scripts/migrate-provider-ids.ts",
     "probe:external-ids": "tsx src/scripts/probes/probe-provider-external-ids.ts",
     "migrate:provider-id-namespacing": "tsx src/scripts/migrations/apply-provider-id-namespacing.ts",
-    "rollback:provider-id-namespacing": "tsx src/scripts/migrations/rollback-provider-id-namespacing.ts"
+    "rollback:provider-id-namespacing": "tsx src/scripts/migrations/rollback-provider-id-namespacing.ts",
+    "migrate:revived-at-trigger": "tsx src/scripts/migrations/apply-revived-at-trigger.ts",
+    "backfill:content-uid": "tsx src/scripts/backfill-content-uid.ts"
   },
   "dependencies": {
     "async-mutex": "^0.5.0",
