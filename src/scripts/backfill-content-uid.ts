@@ -230,17 +230,18 @@ interface ClientLike {
   release: () => void;
 }
 
+// uid_a encodes the source row reference (e.g. "history:42", "favorites:7"); the
+// actual schema has no source_table/source_row_id columns. uid_b is left NULL —
+// backfill rows are not near-dup pairs.
 async function insertReviewQueue(
   client: ClientLike,
   uid_a: string,
   reason: string,
-  sourceTable: string,
-  sourceRowId: number,
 ): Promise<void> {
   await client.query(
-    `INSERT INTO sv_content_review_queue (uid_a, reason, source_table, source_row_id)
-     VALUES ($1, $2, $3, $4)`,
-    [uid_a, reason, sourceTable, sourceRowId],
+    `INSERT INTO sv_content_review_queue (uid_a, reason)
+     VALUES ($1, $2)`,
+    [uid_a, reason],
   );
 }
 
@@ -290,8 +291,6 @@ async function processHistoryRows(
             client,
             `history:${row.id}`,
             "backfill_ambiguous",
-            "sv_watch_history",
-            row.id,
           );
         }
         break;
@@ -301,13 +300,7 @@ async function processHistoryRows(
         summary.noMatch++;
         summary.reviewQueued++;
         if (!dryRun) {
-          await insertReviewQueue(
-            client,
-            `history:${row.id}`,
-            outcome.reason,
-            "sv_watch_history",
-            row.id,
-          );
+          await insertReviewQueue(client, `history:${row.id}`, outcome.reason);
         }
         break;
       case "no_match":
@@ -367,8 +360,6 @@ async function processFavoritesRows(
             client,
             `favorites:${row.id}`,
             "backfill_ambiguous",
-            "sv_favorites",
-            row.id,
           );
         }
         break;
@@ -380,8 +371,6 @@ async function processFavoritesRows(
             client,
             `favorites:${row.id}`,
             outcome.reason,
-            "sv_favorites",
-            row.id,
           );
         }
         break;

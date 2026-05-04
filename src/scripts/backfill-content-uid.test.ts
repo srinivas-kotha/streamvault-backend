@@ -50,8 +50,6 @@ const mockState = {
   reviewQueueInserts: [] as Array<{
     uid_a: string;
     reason: string;
-    source_table: string;
-    source_row_id: number;
   }>,
   updatesApplied: [] as Array<{
     table: string;
@@ -99,18 +97,8 @@ const mockClient = {
     }
     // Review queue INSERT
     if (/INSERT INTO sv_content_review_queue/i.test(sql)) {
-      const [uid_a, reason, source_table, source_row_id] = (params ?? []) as [
-        string,
-        string,
-        string,
-        number,
-      ];
-      mockState.reviewQueueInserts.push({
-        uid_a,
-        reason,
-        source_table,
-        source_row_id,
-      });
+      const [uid_a, reason] = (params ?? []) as [string, string];
+      mockState.reviewQueueInserts.push({ uid_a, reason });
       return { rows: [], rowCount: 1 } as MockQueryResult<never>;
     }
     // BEGIN / COMMIT / ROLLBACK
@@ -343,9 +331,7 @@ describe("backfill-content-uid — Pass 1 (episode-aware)", () => {
     expect(update).toBeUndefined();
     // review queue must have a row
     expect(
-      mockState.reviewQueueInserts.some(
-        (r) => r.source_table === "sv_watch_history" && r.source_row_id === 7,
-      ),
+      mockState.reviewQueueInserts.some((r) => r.uid_a === "history:7"),
     ).toBe(true);
     expect(summary.history.reviewQueued).toBeGreaterThanOrEqual(1);
   });
@@ -414,9 +400,7 @@ describe("backfill-content-uid — Pass 2 (movies + series-as-show)", () => {
     await runBackfill({ dryRun: false, limit: null });
 
     expect(
-      mockState.reviewQueueInserts.some(
-        (r) => r.source_table === "sv_watch_history" && r.source_row_id === 3,
-      ),
+      mockState.reviewQueueInserts.some((r) => r.uid_a === "history:3"),
     ).toBe(true);
     expect(
       mockState.updatesApplied.find(
@@ -442,7 +426,7 @@ describe("backfill-content-uid — Pass 2 (movies + series-as-show)", () => {
     ).toBeUndefined();
     // No-match rows should NOT create review_queue noise
     expect(
-      mockState.reviewQueueInserts.filter((r) => r.source_row_id === 4),
+      mockState.reviewQueueInserts.filter((r) => r.uid_a === "history:4"),
     ).toHaveLength(0);
     expect(summary.history.noMatch).toBeGreaterThanOrEqual(1);
   });
