@@ -406,10 +406,13 @@ async function syncEpisodes(provider: IStreamProvider): Promise<void> {
         );
         if (!lock.rows[0]?.acquired) continue;
 
-        // Flatten episodes from season map
+        // Flatten episodes from season map. Carry the real upstream stream id
+        // and container_extension so playback resolution works under flag-on.
         const allEpisodes: Array<{
           season_num: number;
           episode_num: number;
+          upstream_id: string;
+          container_extension: string | undefined;
         }> = [];
         for (const [season, eps] of Object.entries(detail.episodes)) {
           const seasonNum = parseInt(season, 10);
@@ -418,6 +421,8 @@ async function syncEpisodes(provider: IStreamProvider): Promise<void> {
             allEpisodes.push({
               season_num: seasonNum,
               episode_num: ep.episodeNumber,
+              upstream_id: ep.id,
+              container_extension: ep.containerExtension,
             });
           }
         }
@@ -451,16 +456,22 @@ async function syncEpisodes(provider: IStreamProvider): Promise<void> {
                 ],
               );
 
+              const epRawData = ep.container_extension
+                ? { container_extension: ep.container_extension }
+                : {};
               await client.query(
                 `INSERT INTO sv_content_provider_map
                   (content_uid, provider_id, item_id, raw_data, confidence)
-                 VALUES ($1, $2, $3, '{}'::jsonb, $4)
+                 VALUES ($1, $2, $3, $4::jsonb, $5)
                  ON CONFLICT (content_uid, provider_id) DO UPDATE SET
+                   item_id = EXCLUDED.item_id,
+                   raw_data = EXCLUDED.raw_data,
                    last_synced = now()`,
                 [
                   resolved.content_uid,
                   ACTIVE_PROVIDER_ID,
-                  `${row.item_id}:S${ep.season_num}E${ep.episode_num}`,
+                  ep.upstream_id, // real upstream stream_id (e.g. "731582")
+                  JSON.stringify(epRawData),
                   resolved.confidence,
                 ],
               );

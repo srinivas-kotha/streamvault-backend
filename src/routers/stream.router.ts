@@ -103,6 +103,15 @@ export function isOfflinePlaceholder(
     if (cl !== null && cl !== "") {
       return true;
     }
+  } else {
+    // VOD/series: zero-byte upstream response means the provider has the
+    // catalog entry but no actual file ("Sodhara/Raakaasa pattern" — ~13%
+    // of catalog as of 2026-05-04). Surfacing this as offline lets the
+    // FE show the DormantContentOverlay instead of a blank 0:00 player.
+    const cl = upstream.headers.get("content-length");
+    if (cl === "0") {
+      return true;
+    }
   }
   return false;
 }
