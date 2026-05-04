@@ -78,6 +78,57 @@ describe("resolveStreamUrl", () => {
     expect(mockGetStreamInfo).toHaveBeenCalledWith("9876", "live", undefined);
   });
 
+  // ── Type mapping: master.content_type → provider ContentType ──────────────
+
+  it("maps master.content_type 'movie' to provider type 'vod' (regression: 'movie' would default to undefined ext)", async () => {
+    mockQuery
+      .mockResolvedValueOnce({ rows: [{ item_id: "389052" }] })
+      .mockResolvedValueOnce({ rows: [{ content_type: "movie" }] });
+    mockGetStreamInfo.mockReturnValue(FAKE_STREAM_INFO);
+
+    await resolveStreamUrl("f5cdcbb17723aae0");
+
+    expect(mockGetStreamInfo).toHaveBeenCalledWith("389052", "vod", undefined);
+  });
+
+  it("maps master.content_type 'episode' to provider type 'series'", async () => {
+    mockQuery
+      .mockResolvedValueOnce({ rows: [{ item_id: "12345" }] })
+      .mockResolvedValueOnce({ rows: [{ content_type: "episode" }] });
+    mockGetStreamInfo.mockReturnValue(FAKE_STREAM_INFO);
+
+    await resolveStreamUrl("abcd1234abcd1234");
+
+    expect(mockGetStreamInfo).toHaveBeenCalledWith(
+      "12345",
+      "series",
+      undefined,
+    );
+  });
+
+  it("passes 'live' through unchanged", async () => {
+    mockQuery
+      .mockResolvedValueOnce({ rows: [{ item_id: "55" }] })
+      .mockResolvedValueOnce({ rows: [{ content_type: "live" }] });
+    mockGetStreamInfo.mockReturnValue(FAKE_STREAM_INFO);
+
+    await resolveStreamUrl("aaaa1111bbbb2222");
+
+    expect(mockGetStreamInfo).toHaveBeenCalledWith("55", "live", undefined);
+  });
+
+  it("falls back to 'vod' when master row is missing content_type (defensive)", async () => {
+    mockQuery
+      .mockResolvedValueOnce({ rows: [{ item_id: "777" }] })
+      .mockResolvedValueOnce({ rows: [] }); // master row vanished between queries
+    mockGetStreamInfo.mockReturnValue(FAKE_STREAM_INFO);
+
+    await resolveStreamUrl("aaaa1111bbbb2222");
+
+    // default "movie" → mapped to "vod"
+    expect(mockGetStreamInfo).toHaveBeenCalledWith("777", "vod", undefined);
+  });
+
   // ── Path 2: master exists, no provider_map row → ContentDormant ───────────
 
   it("throws ContentDormant when master exists but no provider_map row for active provider", async () => {
