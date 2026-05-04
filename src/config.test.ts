@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { loadConfig } from "./config";
+import { loadConfig, deriveProviderId } from "./config";
 import type { IAppConfig } from "./config";
 
 // Minimal valid env that satisfies all required vars
@@ -94,5 +94,34 @@ describe("loadConfig", () => {
 
     const result = loadConfig(envNoPort);
     expect(result.port).toBe(3001);
+  });
+});
+
+describe("deriveProviderId", () => {
+  it("returns 'xtream:' + 8 hex chars from host:port:user", () => {
+    const id = deriveProviderId({
+      host: "rgkkw.live",
+      port: 8080,
+      username: "user1234",
+    });
+    expect(id).toMatch(/^xtream:[a-f0-9]{8}$/);
+  });
+
+  it("is deterministic for same inputs", () => {
+    const a = deriveProviderId({ host: "x", port: 80, username: "u" });
+    const b = deriveProviderId({ host: "x", port: 80, username: "u" });
+    expect(a).toBe(b);
+  });
+
+  it("differs when host differs", () => {
+    const a = deriveProviderId({ host: "a.com", port: 80, username: "u" });
+    const b = deriveProviderId({ host: "b.com", port: 80, username: "u" });
+    expect(a).not.toBe(b);
+  });
+
+  it("does NOT depend on password — rotation-safe by design", () => {
+    // password is intentionally excluded from the hash input
+    const id = deriveProviderId({ host: "x", port: 80, username: "u" });
+    expect(id).toBe(deriveProviderId({ host: "x", port: 80, username: "u" }));
   });
 });

@@ -1,3 +1,36 @@
+import { createHash } from "node:crypto";
+
+// ---------------------------------------------------------------------------
+// Provider identity helpers (Phase 0 — content-identity layer)
+// ---------------------------------------------------------------------------
+
+/**
+ * Minimal provider connection identity used to derive a stable, rotation-safe
+ * provider_id. Password is intentionally excluded so credential rotations do
+ * not invalidate the identifier.
+ */
+export interface ProviderConnIdentity {
+  host: string;
+  port: number;
+  username: string;
+}
+
+/**
+ * Derives a stable, deterministic provider_id from the Xtream connection
+ * identity: sha1(host:port:username)[:8] prefixed with "xtream:".
+ *
+ * This replaces the generic "xtream" literal in sv_catalog.provider_id so that
+ * provider swaps produce a distinct id, enabling clean data isolation between
+ * providers while preserving user-data continuity within a single provider.
+ */
+export function deriveProviderId(c: ProviderConnIdentity): string {
+  const hash = createHash("sha1")
+    .update(`${c.host}:${c.port}:${c.username}`)
+    .digest("hex")
+    .slice(0, 8);
+  return `xtream:${hash}`;
+}
+
 export interface IAppConfig {
   nodeEnv: string;
   providerType: "xtream";
@@ -118,3 +151,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): IAppConfig {
 }
 
 export const config = loadConfig();
+
+/**
+ * Stable, namespaced provider_id derived from the active Xtream connection at
+ * boot time. Used by the content-identity layer to namespace sv_catalog rows
+ * and by migration scripts. Computed once at module load.
+ */
+export const ACTIVE_PROVIDER_ID = deriveProviderId({
+  host: config.xtream.host,
+  port: config.xtream.port,
+  username: config.xtream.username,
+});
