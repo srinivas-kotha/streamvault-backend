@@ -103,18 +103,27 @@ export function adaptSeriesInfo(
     icon: s.cover || undefined,
   }));
 
+  // Some providers ship episodes in reverse air-order (newest-first) inside
+  // the array AND set ep.episode_num to the array position rather than the
+  // real episode number. The reliable signal is ep.title, which is shaped
+  // like "S2.E01"/"S02 E10". Parse it; fall back to ep.episode_num.
+  const TITLE_RE = /S0*(\d+)\W*E0*(\d+)/i;
   const adaptedEpisodes: Record<string, EpisodeInfo[]> = {};
   for (const [seasonKey, episodeList] of Object.entries(episodes ?? {})) {
-    adaptedEpisodes[seasonKey] = episodeList.map((ep) => ({
-      id: String(ep.id),
-      episodeNumber: ep.episode_num,
-      title: ep.title,
-      containerExtension: ep.container_extension || undefined,
-      duration:
-        ep.info?.duration_secs != null ? ep.info.duration_secs : undefined,
-      plot: ep.info?.plot || undefined,
-      icon: ep.info?.movie_image || undefined,
-    }));
+    adaptedEpisodes[seasonKey] = episodeList.map((ep) => {
+      const m = ep.title?.match(TITLE_RE);
+      const realEpisodeNumber = m && m[2] ? parseInt(m[2], 10) : ep.episode_num;
+      return {
+        id: String(ep.id),
+        episodeNumber: realEpisodeNumber,
+        title: ep.title,
+        containerExtension: ep.container_extension || undefined,
+        duration:
+          ep.info?.duration_secs != null ? ep.info.duration_secs : undefined,
+        plot: ep.info?.plot || undefined,
+        icon: ep.info?.movie_image || undefined,
+      };
+    });
   }
 
   // Note: XtreamSeriesInfo doesn't include is_adult; defaults to false

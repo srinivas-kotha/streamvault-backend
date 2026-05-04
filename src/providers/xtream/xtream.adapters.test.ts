@@ -700,6 +700,69 @@ describe("adaptEPGItem", () => {
   });
 });
 
+describe("adaptSeriesInfo — episode number parsing (provider sends reverse air-order)", () => {
+  it("parses real episode number from title 'S2.E01' instead of array-position episode_num", () => {
+    // Cooku-pattern: provider returns newest-first, ep.episode_num=1 but title says E10
+    const reversed: XtreamSeriesInfo = {
+      ...rawSeriesInfo,
+      episodes: {
+        "2": [
+          {
+            id: "741990",
+            episode_num: 1, // array position — wrong
+            title: "S2.E10", // real episode number — right
+            container_extension: "mp4",
+            info: {},
+          },
+          {
+            id: "731582",
+            episode_num: 10,
+            title: "S2.E01",
+            container_extension: "mp4",
+            info: {},
+          },
+        ],
+      },
+    };
+    const result = adaptSeriesInfo(reversed, "5296", "264");
+    expect(result.episodes!["2"]![0]!.episodeNumber).toBe(10);
+    expect(result.episodes!["2"]![1]!.episodeNumber).toBe(1);
+  });
+
+  it("falls back to episode_num when title has no S/E pattern", () => {
+    const result = adaptSeriesInfo(rawSeriesInfo, "303", "7");
+    // fixture title='Pilot', episode_num=1 → falls back to 1
+    expect(result.episodes!["1"]![0]!.episodeNumber).toBe(1);
+  });
+
+  it("handles 'S02 E10' (space separator) and 'S2E10' (no separator)", () => {
+    const variants: XtreamSeriesInfo = {
+      ...rawSeriesInfo,
+      episodes: {
+        "2": [
+          {
+            id: "a",
+            episode_num: 99,
+            title: "S02 E10",
+            container_extension: "mp4",
+            info: {},
+          },
+          {
+            id: "b",
+            episode_num: 99,
+            title: "S2E07",
+            container_extension: "mp4",
+            info: {},
+          },
+        ],
+      },
+    };
+    const result = adaptSeriesInfo(variants, "1", "1");
+    expect(result.episodes!["2"]![0]!.episodeNumber).toBe(10);
+    expect(result.episodes!["2"]![1]!.episodeNumber).toBe(7);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // adaptCategory
 // ---------------------------------------------------------------------------

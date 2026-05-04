@@ -201,6 +201,32 @@ describe("isOfflinePlaceholder", () => {
       ).toBe(true);
     });
 
+    it("flags VOD with Content-Length: 0 (provider has metadata, no file — 'Raakaasa pattern')", () => {
+      expect(
+        isOfflinePlaceholder(
+          fakeResponse({
+            url: "http://vdlbxx.vdcartosat.space/movie/U/P/741309.mkv?token=abc",
+            contentType: "video/mp4",
+            contentLength: "0",
+          }),
+          false,
+        ),
+      ).toBe(true);
+    });
+
+    it("flags series episode with Content-Length: 0", () => {
+      expect(
+        isOfflinePlaceholder(
+          fakeResponse({
+            url: "http://vdlbxx.vdcartosat.space/series/U/P/731582.mp4?token=abc",
+            contentType: "video/mp4",
+            contentLength: "0",
+          }),
+          false,
+        ),
+      ).toBe(true);
+    });
+
     it("does NOT flag a content-length on a VOD or series response", () => {
       // Real VOD and series legitimately have Content-Length set; the
       // live-only heuristic must not false-positive on them.
