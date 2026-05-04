@@ -53,6 +53,12 @@ export interface CatalogItem {
    * not all providers return rich metadata.
    */
   rawData?: Record<string, unknown>;
+  /**
+   * Stable content identity UID (16-char lowercase hex). Populated when
+   * SV_USE_CONTENT_UID=1 and the item maps to a row in sv_content_master.
+   * Null when the item has no master entry (orphan catalog row).
+   */
+  content_uid?: string | null;
 }
 
 export interface SeasonInfo {

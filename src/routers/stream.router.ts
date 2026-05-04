@@ -7,6 +7,20 @@ import {
   getOrFetchVodRange,
   releaseVodRange,
 } from "../services/vod-flight.service";
+import {
+  resolveStreamUrl,
+  ContentDormant,
+  ContentNotFound,
+} from "../services/playback.service";
+import { query } from "../services/db.service";
+import { ACTIVE_PROVIDER_ID } from "../config";
+import type { StreamInfo } from "../providers/provider.types";
+
+/**
+ * Discriminates a content_uid from a legacy numeric item_id.
+ * content_uid is always exactly 16 lowercase hex characters (CHAR(16), sha1[:16]).
+ */
+export const isContentUid = (id: string): boolean => /^[a-f0-9]{16}$/.test(id);
 
 const router = Router();
 
@@ -270,10 +284,11 @@ router.get(
       return;
     }
 
-    if (!id || !/^\d+$/.test(id)) {
+    // Accept both content_uid (16-char hex) and legacy numeric IDs
+    if (!id || (!isContentUid(id) && !/^\d+$/.test(id))) {
       res.status(400).json({
         error: "Bad Request",
-        message: "Stream ID must be a numeric value",
+        message: "Stream ID must be a numeric value or a 16-char content_uid",
       });
       return;
     }
@@ -291,8 +306,50 @@ router.get(
     const rawExt =
       typeof req.query.ext === "string" ? req.query.ext : undefined;
     const ext = rawExt && ALLOWED_EXTENSIONS.has(rawExt) ? rawExt : undefined;
-    const provider = getProvider();
-    const streamInfo = provider.getStreamInfo(id, streamType, ext);
+
+    // ── Phase 3: content_uid dispatch ────────────────────────────────────────
+    // Resolve StreamInfo via the content-identity layer when:
+    //   (a) id is a content_uid — always use new path regardless of flag
+    //   (b) SV_USE_CONTENT_UID=1 and id is numeric — translate via provider_map
+    // Otherwise fall through to the legacy provider.getStreamInfo() path.
+    let streamInfo: StreamInfo;
+    try {
+      if (isContentUid(id)) {
+        streamInfo = await resolveStreamUrl(id, ext);
+      } else if (process.env.SV_USE_CONTENT_UID === "1") {
+        // Translate legacy numeric item_id → content_uid via provider_map
+        const mapRow = await query<{ content_uid: string }>(
+          `SELECT content_uid
+             FROM sv_content_provider_map
+            WHERE provider_id = $1
+              AND item_id = $2`,
+          [ACTIVE_PROVIDER_ID, id],
+        );
+        if (!mapRow.rows[0]) {
+          throw new ContentNotFound(id);
+        }
+        streamInfo = await resolveStreamUrl(mapRow.rows[0].content_uid, ext);
+      } else {
+        // Legacy path (unchanged) — direct provider call
+        const provider = getProvider();
+        streamInfo = provider.getStreamInfo(id, streamType, ext);
+      }
+    } catch (e) {
+      if (e instanceof ContentDormant) {
+        res.status(410).json({
+          error: "DORMANT",
+          content_uid: e.uid,
+          message: "Title not on current provider",
+        });
+        return;
+      }
+      if (e instanceof ContentNotFound) {
+        res.status(404).json({ error: "NOT_FOUND" });
+        return;
+      }
+      throw e;
+    }
+
     const isLive = streamType === "live";
 
     // SSRF protection: verify the assembled URL targets the provider's allowed hosts
@@ -326,9 +383,7 @@ router.get(
         });
       } else {
         const range =
-          typeof req.headers.range === "string"
-            ? req.headers.range
-            : undefined;
+          typeof req.headers.range === "string" ? req.headers.range : undefined;
         const flight = await getOrFetchVodRange(
           streamInfo.url,
           streamInfo.headers,

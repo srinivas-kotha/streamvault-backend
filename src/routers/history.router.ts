@@ -2,17 +2,29 @@ import { Router, Request, Response } from "express";
 import { authMiddleware } from "../middleware/auth";
 import { query } from "../services/db.service";
 import { contentIdSchema, historyUpdateSchema } from "../utils/validators";
+import { z } from "zod";
 import type { DbWatchHistory } from "../types/db.types";
 
 const router = Router();
 
-// GET /api/history
+/** content_uid format: 16 lowercase hex chars */
+const contentUidParamSchema = z.object({
+  contentUid: z.string().regex(/^[a-f0-9]{16}$/, "Invalid content_uid format"),
+});
+
+// ── GET /api/history ──────────────────────────────────────────────────────────
+
 router.get("/", authMiddleware, async (req: Request, res: Response) => {
   try {
     const userId = req.user!.userId;
+    const useNewPath = process.env.SV_USE_CONTENT_UID === "1";
+
+    const selectCols = useNewPath
+      ? "id, content_type, content_id, content_name, content_icon, progress_seconds, duration_seconds, watched_at, content_uid"
+      : "id, content_type, content_id, content_name, content_icon, progress_seconds, duration_seconds, watched_at";
 
     const result = await query<DbWatchHistory>(
-      "SELECT id, content_type, content_id, content_name, content_icon, progress_seconds, duration_seconds, watched_at FROM sv_watch_history WHERE user_id = $1 ORDER BY watched_at DESC LIMIT 50",
+      `SELECT ${selectCols} FROM sv_watch_history WHERE user_id = $1 ORDER BY watched_at DESC LIMIT 50`,
       [userId],
     );
 
@@ -22,16 +34,149 @@ router.get("/", authMiddleware, async (req: Request, res: Response) => {
       "[history] Failed to fetch history:",
       err instanceof Error ? err.message : err,
     );
-    res
-      .status(500)
-      .json({
-        error: "Internal Server Error",
-        message: "Failed to fetch watch history",
-      });
+    res.status(500).json({
+      error: "Internal Server Error",
+      message: "Failed to fetch watch history",
+    });
   }
 });
 
-// PUT /api/history/:contentId
+// ── New path (flag on): PUT /api/history/uid/:contentUid ─────────────────────
+
+router.put(
+  "/uid/:contentUid",
+  authMiddleware,
+  async (req: Request, res: Response) => {
+    if (process.env.SV_USE_CONTENT_UID !== "1") {
+      res
+        .status(404)
+        .json({ error: "Not Found", message: "Endpoint not enabled" });
+      return;
+    }
+
+    try {
+      const paramsParsed = contentUidParamSchema.safeParse(req.params);
+      if (!paramsParsed.success) {
+        res.status(400).json({
+          error: "Bad Request",
+          message:
+            paramsParsed.error.errors[0]?.message ?? "Invalid content_uid",
+        });
+        return;
+      }
+
+      const bodyParsed = historyUpdateSchema.safeParse(req.body);
+      if (!bodyParsed.success) {
+        res.status(400).json({
+          error: "Bad Request",
+          message: bodyParsed.error.errors[0]?.message,
+        });
+        return;
+      }
+
+      const userId = req.user!.userId;
+      const { contentUid } = paramsParsed.data;
+      const {
+        content_type,
+        content_name,
+        content_icon,
+        progress_seconds,
+        duration_seconds,
+      } = bodyParsed.data;
+
+      await query(
+        `INSERT INTO sv_watch_history (user_id, content_type, content_uid, content_name, content_icon, progress_seconds, duration_seconds, watched_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+         ON CONFLICT (user_id, content_type, content_uid) DO UPDATE SET
+           progress_seconds = EXCLUDED.progress_seconds,
+           duration_seconds = EXCLUDED.duration_seconds,
+           content_name = COALESCE(EXCLUDED.content_name, sv_watch_history.content_name),
+           content_icon = COALESCE(EXCLUDED.content_icon, sv_watch_history.content_icon),
+           watched_at = NOW()`,
+        [
+          userId,
+          content_type,
+          contentUid,
+          content_name ?? null,
+          content_icon ?? null,
+          progress_seconds,
+          duration_seconds,
+        ],
+      );
+
+      res.json({ message: "Watch history updated" });
+    } catch (err) {
+      console.error(
+        "[history] Failed to update history (uid):",
+        err instanceof Error ? err.message : err,
+      );
+      res.status(500).json({
+        error: "Internal Server Error",
+        message: "Failed to update watch history",
+      });
+    }
+  },
+);
+
+// ── New path (flag on): DELETE /api/history/uid/:contentUid ──────────────────
+
+router.delete(
+  "/uid/:contentUid",
+  authMiddleware,
+  async (req: Request, res: Response) => {
+    if (process.env.SV_USE_CONTENT_UID !== "1") {
+      res
+        .status(404)
+        .json({ error: "Not Found", message: "Endpoint not enabled" });
+      return;
+    }
+
+    try {
+      const parsed = contentUidParamSchema.safeParse(req.params);
+      if (!parsed.success) {
+        res.status(400).json({
+          error: "Bad Request",
+          message: parsed.error.errors[0]?.message ?? "Invalid content_uid",
+        });
+        return;
+      }
+
+      const rawContentType = req.query.content_type as string;
+      const validContentTypes = ["channel", "live", "vod", "series"];
+      if (!rawContentType || !validContentTypes.includes(rawContentType)) {
+        res.status(400).json({
+          error: "Bad Request",
+          message: "content_type must be one of: channel, live, vod, series",
+        });
+        return;
+      }
+      const contentType =
+        rawContentType === "live" ? "channel" : rawContentType;
+
+      const userId = req.user!.userId;
+      const { contentUid } = parsed.data;
+
+      await query(
+        "DELETE FROM sv_watch_history WHERE user_id = $1 AND content_uid = $2 AND content_type = $3",
+        [userId, contentUid, contentType],
+      );
+
+      res.json({ message: "History item removed" });
+    } catch (err) {
+      console.error(
+        "[history] Failed to delete history item (uid):",
+        err instanceof Error ? err.message : err,
+      );
+      res.status(500).json({
+        error: "Internal Server Error",
+        message: "Failed to remove history item",
+      });
+    }
+  },
+);
+
+// ── Legacy path (flag off): PUT /api/history/:contentId ──────────────────────
+
 router.put(
   "/:contentId",
   authMiddleware,
@@ -47,12 +192,10 @@ router.put(
 
       const bodyParsed = historyUpdateSchema.safeParse(req.body);
       if (!bodyParsed.success) {
-        res
-          .status(400)
-          .json({
-            error: "Bad Request",
-            message: bodyParsed.error.errors[0].message,
-          });
+        res.status(400).json({
+          error: "Bad Request",
+          message: bodyParsed.error.errors[0]?.message,
+        });
         return;
       }
 
@@ -92,17 +235,16 @@ router.put(
         "[history] Failed to update history:",
         err instanceof Error ? err.message : err,
       );
-      res
-        .status(500)
-        .json({
-          error: "Internal Server Error",
-          message: "Failed to update watch history",
-        });
+      res.status(500).json({
+        error: "Internal Server Error",
+        message: "Failed to update watch history",
+      });
     }
   },
 );
 
-// DELETE /api/history/:contentId?content_type=channel|vod|series
+// ── Legacy path (flag off): DELETE /api/history/:contentId ───────────────────
+
 router.delete(
   "/:contentId",
   authMiddleware,
@@ -119,12 +261,10 @@ router.delete(
       const rawContentType = req.query.content_type as string;
       const validContentTypes = ["channel", "live", "vod", "series"];
       if (!rawContentType || !validContentTypes.includes(rawContentType)) {
-        res
-          .status(400)
-          .json({
-            error: "Bad Request",
-            message: "content_type must be one of: channel, live, vod, series",
-          });
+        res.status(400).json({
+          error: "Bad Request",
+          message: "content_type must be one of: channel, live, vod, series",
+        });
         return;
       }
       // Normalize "live" → "channel" for DB consistency
@@ -145,12 +285,10 @@ router.delete(
         "[history] Failed to delete history item:",
         err instanceof Error ? err.message : err,
       );
-      res
-        .status(500)
-        .json({
-          error: "Internal Server Error",
-          message: "Failed to remove history item",
-        });
+      res.status(500).json({
+        error: "Internal Server Error",
+        message: "Failed to remove history item",
+      });
     }
   },
 );
