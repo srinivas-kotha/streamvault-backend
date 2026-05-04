@@ -11,6 +11,7 @@
 import { query } from "./db.service";
 import { cacheGet, cacheSet, CacheTTL } from "./cache.service";
 import { inferLanguage } from "./language-inference.service";
+import { ACTIVE_PROVIDER_ID } from "../config";
 import type { IStreamProvider, CatalogItem, ContentType } from "../providers";
 
 // Sync intervals (ms)
@@ -133,7 +134,7 @@ export async function syncCatalog(
       return;
     }
 
-    await upsertCatalogItems(provider.name, items);
+    await upsertCatalogItems(ACTIVE_PROVIDER_ID, items);
 
     // Write-through: update cache with the full list
     const cacheKey = `catalog:${provider.name}:${type}:all`;
@@ -206,7 +207,7 @@ export async function getCatalogItems(
        FROM sv_catalog
        WHERE provider_id = $1 AND item_type = $2
        ORDER BY name`,
-      [provider.name, type],
+      [ACTIVE_PROVIDER_ID, type],
     );
 
     if (result.rows.length > 0) {
@@ -317,7 +318,7 @@ export async function searchCatalog(
           AND ($4::boolean IS FALSE OR c.is_adult = false)
      ORDER BY ts_rank(c.search_vector, to_tsquery('english', $2)) DESC
         LIMIT 150`,
-      [provider.name, tsq, type ?? null, hideAdult],
+      [ACTIVE_PROVIDER_ID, tsq, type ?? null, hideAdult],
     );
 
     const empty: SearchResults = { live: [], vod: [], series: [] };
