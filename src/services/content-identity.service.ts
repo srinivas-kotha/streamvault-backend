@@ -34,10 +34,12 @@ const LANGUAGE_TAGS = [
   "Subbed",
 ];
 const LANG_TAG_RE = new RegExp(`\\((?:${LANGUAGE_TAGS.join("|")})\\)`, "gi");
-const YEAR_RE = /[\(\[]\s*(19|20)\d{2}\s*[\)\]]/g;
+const YEAR_RE = /[([]\s*(?:19|20)\d{2}\s*[)\]]/g;
 const EPISODE_CODE_RE = /\bS\d+E\d+\b|\bSeason\s+\d+\s+Episode\s+\d+\b/gi;
+// eslint-disable-next-line no-useless-escape
 const PUNCT_RE = /[·\-()\[\]:.,;'"''""–—]/g;
 // Non-printable: zero-width space U+200B, zero-width no-break U+FEFF, NBSP U+00A0 etc.
+// eslint-disable-next-line no-misleading-character-class, no-irregular-whitespace
 const NON_PRINTABLE_RE = /[ ​‌‍﻿]/g;
 const WHITESPACE_RE = /\s+/g;
 
