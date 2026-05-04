@@ -339,6 +339,11 @@ export class XtreamProvider extends BaseStreamProvider {
         return "mp4";
       case "series":
         return "mp4";
+      default:
+        // Defensive: any unexpected type (e.g. caller passing master.content_type
+        // values like "movie") falls back to mp4 so the URL is at least well-formed
+        // instead of "/movie/u/p/123.undefined" (broken upstream URL).
+        return "mp4";
     }
   }
 

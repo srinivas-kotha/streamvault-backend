@@ -16,6 +16,27 @@ import { ACTIVE_PROVIDER_ID } from "../config";
 import { getProvider } from "../providers";
 import type { StreamInfo, ContentType } from "../providers/provider.types";
 
+/**
+ * sv_content_master.content_type uses a richer vocabulary than the provider's
+ * StreamType. Movies → vod, episodes → series (Xtream serves single-episode
+ * URLs under /series/), live → live, series-as-show isn't directly playable
+ * (callers should resolve to an episode first; we map to "series" as a safe
+ * fallback so the URL is well-formed even if hit directly).
+ */
+type MasterContentType = "movie" | "episode" | "series" | "live";
+function masterTypeToProviderType(t: MasterContentType): ContentType {
+  switch (t) {
+    case "movie":
+      return "vod";
+    case "episode":
+      return "series";
+    case "live":
+      return "live";
+    case "series":
+      return "series";
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Typed errors
 // ─────────────────────────────────────────────────────────────────────────────
@@ -70,18 +91,20 @@ export async function resolveStreamUrl(
   );
 
   if (mapResult.rows.length > 0) {
-    // Happy path: mapping found — fetch content_type from master, then call provider
+    // Happy path: mapping found — fetch content_type from master, then call provider.
+    // Master uses "movie/episode/series/live"; provider expects "vod/series/live".
     const { item_id } = mapResult.rows[0]!;
-    const masterForType = await query<{ content_type: ContentType }>(
+    const masterForType = await query<{ content_type: MasterContentType }>(
       `SELECT content_type FROM sv_content_master WHERE content_uid = $1`,
       [uid],
     );
-    const content_type = masterForType.rows[0]?.content_type ?? "vod";
-    return getProvider().getStreamInfo(item_id, content_type, ext);
+    const masterType = masterForType.rows[0]?.content_type ?? "movie";
+    const providerType = masterTypeToProviderType(masterType);
+    return getProvider().getStreamInfo(item_id, providerType, ext);
   }
 
   // No mapping for active provider — check if master row exists at all
-  const masterResult = await query<{ content_type: ContentType }>(
+  const masterResult = await query<{ content_type: MasterContentType }>(
     `SELECT content_type FROM sv_content_master WHERE content_uid = $1`,
     [uid],
   );
