@@ -25,6 +25,7 @@ import {
   normalize,
   computeContentUid,
 } from "../services/content-identity.service";
+import { ACTIVE_PROVIDER_ID } from "../config";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -119,13 +120,6 @@ interface HistoryRow {
 interface FavoriteRow {
   id: number;
   content_name: string | null;
-  content_type: string;
-  content_uid: string | null;
-}
-
-interface EpgRow {
-  id: number;
-  title: string | null;
   content_type: string;
   content_uid: string | null;
 }
@@ -229,10 +223,10 @@ async function resolveByTitle(
 // ─── Per-table backfill logic ─────────────────────────────────────────────────
 
 interface ClientLike {
-  query: (
+  query: <T = unknown>(
     sql: string,
     params?: unknown[],
-  ) => Promise<{ rows: unknown[]; rowCount: number }>;
+  ) => Promise<{ rows: T[]; rowCount: number }>;
   release: () => void;
 }
 
@@ -403,13 +397,16 @@ async function processFavoritesRows(
   return summary;
 }
 
-async function processEpgRows(
-  rows: EpgRow[],
+// EPG backfill is a single set-based UPDATE join with sv_content_provider_map
+// on channel_id (sv_epg has no content_type column — verified Phase 0 Task 0.5a).
+// Mirrors fillEpgContentUid() in epg.service.ts.
+async function processEpgSetBased(
   client: ClientLike,
   dryRun: boolean,
+  limit: number | null,
 ): Promise<TableSummary> {
   const summary: TableSummary = {
-    total: rows.length,
+    total: 0,
     matched: 0,
     ambiguous: 0,
     noMatch: 0,
@@ -417,50 +414,51 @@ async function processEpgRows(
     skipped: 0,
   };
 
-  for (const row of rows) {
-    const name = row.title;
-    if (!name) {
-      summary.skipped++;
-      continue;
-    }
+  // Snapshot total NULL rows up-front for the summary (limit-respecting).
+  const limitClause = limit !== null ? `LIMIT ${limit}` : "";
+  const totalRes = await client.query<{ count: string }>(
+    `SELECT count(*)::text AS count FROM (
+       SELECT 1 FROM sv_epg WHERE content_uid IS NULL ${limitClause}
+     ) sub`,
+  );
+  summary.total = parseInt(totalRes.rows[0]?.count ?? "0", 10);
+  if (summary.total === 0) return summary;
 
-    // EPG rows are live channels — always Pass 2 only (no episode pattern)
-    const outcome = await resolveByTitle(name, row.content_type || "live");
+  // Set-based join. provider_id namespaced (xtream:8027e2a2 in prod).
+  const limitFilter =
+    limit !== null
+      ? `AND e.id IN (SELECT id FROM sv_epg WHERE content_uid IS NULL LIMIT ${limit})`
+      : "";
 
-    switch (outcome.kind) {
-      case "matched":
-        summary.matched++;
-        if (!dryRun) {
-          await client.query(
-            `UPDATE sv_epg SET content_uid = $1 WHERE id = $2`,
-            [outcome.uid, row.id],
-          );
-        }
-        break;
-      case "ambiguous":
-        summary.ambiguous++;
-        summary.reviewQueued++;
-        if (!dryRun) {
-          await insertReviewQueue(
-            client,
-            `epg:${row.id}`,
-            "backfill_ambiguous",
-            "sv_epg",
-            row.id,
-          );
-        }
-        break;
-      case "episode_orphan":
-        // resolveByTitle never returns this kind, but case kept for exhaustiveness.
-        summary.noMatch++;
-        break;
-      case "no_match":
-        summary.noMatch++;
-        break;
-      case "skipped":
-        summary.skipped++;
-        break;
-    }
+  if (dryRun) {
+    // Count how many rows WOULD update (preview only).
+    const r = await client.query<{ count: string }>(
+      `SELECT count(*)::text AS count
+         FROM sv_epg e
+         JOIN sv_content_provider_map pm
+           ON pm.provider_id = $1 AND pm.item_id = e.channel_id
+        WHERE e.content_uid IS NULL ${limitFilter}`,
+      [ACTIVE_PROVIDER_ID],
+    );
+    summary.matched = parseInt(r.rows[0]?.count ?? "0", 10);
+    summary.noMatch = summary.total - summary.matched;
+  } else {
+    const r = await client.query<{ id: number }>(
+      `WITH updated AS (
+         UPDATE sv_epg e
+            SET content_uid = pm.content_uid
+           FROM sv_content_provider_map pm
+          WHERE pm.provider_id = $1
+            AND pm.item_id     = e.channel_id
+            AND e.content_uid IS NULL
+            ${limitFilter}
+        RETURNING e.id
+       )
+       SELECT id FROM updated`,
+      [ACTIVE_PROVIDER_ID],
+    );
+    summary.matched = r.rowCount ?? 0;
+    summary.noMatch = summary.total - summary.matched;
   }
 
   return summary;
@@ -492,17 +490,6 @@ async function fetchFavoritesRows(
   return r.rows;
 }
 
-async function fetchEpgRows(limit: number | null): Promise<EpgRow[]> {
-  const limitClause = limit !== null ? `LIMIT ${limit}` : "";
-  const r = await query<EpgRow>(
-    `SELECT id, title, content_type, content_uid
-     FROM sv_epg
-     WHERE content_uid IS NULL
-     ${limitClause}`,
-  );
-  return r.rows;
-}
-
 // ─── Main backfill runner (exported for tests + CLI) ─────────────────────────
 
 export async function runBackfill(
@@ -510,11 +497,11 @@ export async function runBackfill(
 ): Promise<BackfillSummary> {
   const { dryRun, limit } = options;
 
-  // Fetch all unresolved rows up-front (idempotent: WHERE content_uid IS NULL)
-  const [historyRows, favoritesRows, epgRows] = await Promise.all([
+  // Fetch row-based unresolved rows up-front (idempotent: WHERE content_uid IS NULL).
+  // EPG is handled set-based inside the transaction below.
+  const [historyRows, favoritesRows] = await Promise.all([
     fetchHistoryRows(limit),
     fetchFavoritesRows(limit),
-    fetchEpgRows(limit),
   ]);
 
   // Acquire a transaction client
@@ -532,7 +519,7 @@ export async function runBackfill(
       client,
       dryRun,
     );
-    epgSummary = await processEpgRows(epgRows, client, dryRun);
+    epgSummary = await processEpgSetBased(client, dryRun, limit);
 
     if (dryRun) {
       await client.query("ROLLBACK");
