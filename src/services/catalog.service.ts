@@ -509,22 +509,45 @@ export async function syncProviderCatalog(
 /**
  * Start background sync timers for all content types.
  * Called once at server startup.
+ *
+ * Two parallel sync paths run on the same cadence:
+ *   1. Legacy `syncCatalog` per type → writes `sv_catalog` (consumed by FTS + browse)
+ *   2. `syncProviderCatalog` → dual-writes `sv_content_master` +
+ *      `sv_content_provider_map` + EPG content_uid backfill (Phase 1)
+ *
+ * The dual-write is gated by an advisory lock and is idempotent
+ * (ON CONFLICT), so sync overlap is safe.
  */
 export function startCatalogSync(provider: IStreamProvider): void {
   const run = async (type: ContentType) => {
     await syncCatalog(provider, type);
   };
 
+  const runDualWrite = async () => {
+    try {
+      await syncProviderCatalog(provider);
+    } catch (err) {
+      console.error(
+        "[catalog] dual-write sync failed:",
+        err instanceof Error ? err.message : err,
+      );
+    }
+  };
+
   // Run immediately then schedule
   run("live");
   run("vod");
   run("series");
+  // Delay dual-write slightly so legacy sv_catalog completes first (best-effort)
+  setTimeout(runDualWrite, 30_000);
 
   setInterval(() => run("live"), SYNC_INTERVAL_LIVE_MS);
   setInterval(() => run("vod"), SYNC_INTERVAL_VOD_MS);
   setInterval(() => run("series"), SYNC_INTERVAL_SERIES_MS);
+  // Re-run dual-write on the live cadence (every 2h); covers vod/series too
+  setInterval(runDualWrite, SYNC_INTERVAL_LIVE_MS);
 
-  console.log("[catalog] Background sync started");
+  console.log("[catalog] Background sync started (legacy + dual-write)");
 }
 
 // ─────────────────────────────────────────────
