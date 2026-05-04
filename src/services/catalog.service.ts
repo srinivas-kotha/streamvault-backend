@@ -64,7 +64,7 @@ async function upsertCatalogItems(
 
     for (const item of chunk) {
       placeholders.push(
-        `($${col++}, $${col++}, $${col++}, $${col++}, $${col++}, $${col++}, $${col++}, $${col++}, $${col++}, $${col++}, NOW())`,
+        `($${col++}, $${col++}, $${col++}, $${col++}, $${col++}, $${col++}, $${col++}, $${col++}, $${col++}, $${col++}, $${col++}::jsonb, NOW())`,
       );
       values.push(
         providerId,
@@ -77,12 +77,13 @@ async function upsertCatalogItems(
         item.rating ?? null,
         item.genre ?? null,
         item.year ?? null,
+        item.rawData ? JSON.stringify(item.rawData) : null,
       );
     }
 
     await query(
       `INSERT INTO sv_catalog
-         (provider_id, item_id, item_type, name, category_id, icon, is_adult, rating, genre, year, last_synced)
+         (provider_id, item_id, item_type, name, category_id, icon, is_adult, rating, genre, year, raw_data, last_synced)
        VALUES ${placeholders.join(", ")}
        ON CONFLICT (provider_id, item_id, item_type) DO UPDATE SET
          name = EXCLUDED.name,
@@ -92,6 +93,7 @@ async function upsertCatalogItems(
          rating = EXCLUDED.rating,
          genre = EXCLUDED.genre,
          year = EXCLUDED.year,
+         raw_data = EXCLUDED.raw_data,
          last_synced = NOW()`,
       values,
     );
@@ -333,7 +335,9 @@ export async function searchCatalog(
         rating: row.rating ?? undefined,
         genre: row.genre ?? undefined,
         year: row.year ?? undefined,
-        inferredLang: row.category_name ? inferLanguage(row.category_name) : null,
+        inferredLang: row.category_name
+          ? inferLanguage(row.category_name)
+          : null,
       };
 
       const bucket = row.item_type as ContentType;

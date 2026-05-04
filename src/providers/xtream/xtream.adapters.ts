@@ -30,6 +30,7 @@ export function adaptLiveStream(raw: XtreamLiveStream): CatalogItem {
     icon: raw.stream_icon || null,
     added: raw.added || null,
     isAdult: raw.is_adult === "1",
+    rawData: raw as unknown as Record<string, unknown>,
   };
 }
 
@@ -43,6 +44,7 @@ export function adaptVODStream(raw: XtreamVODStream): CatalogItem {
     added: raw.added || null,
     isAdult: raw.is_adult === "1",
     rating: raw.rating || undefined,
+    rawData: raw as unknown as Record<string, unknown>,
   };
 }
 
@@ -58,6 +60,7 @@ export function adaptSeriesItem(raw: XtreamSeriesItem): CatalogItem {
     rating: raw.rating || undefined,
     genre: raw.genre || undefined,
     year: raw.releaseDate ? raw.releaseDate.split("-")[0] : undefined,
+    rawData: raw as unknown as Record<string, unknown>,
   };
 }
 

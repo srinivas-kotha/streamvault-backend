@@ -47,6 +47,12 @@ export interface CatalogItem {
    * that was in LiveRoute / MoviesRoute / SeriesRoute (frontend issue #52).
    */
   inferredLang?: InferredLang | null;
+  /**
+   * Original provider payload preserved for downstream consumers (content-identity
+   * layer reads tmdb_id/imdb_id/tvdb_id from this when present). Optional because
+   * not all providers return rich metadata.
+   */
+  rawData?: Record<string, unknown>;
 }
 
 export interface SeasonInfo {
